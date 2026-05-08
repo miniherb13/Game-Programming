@@ -33,7 +33,8 @@ Game::Game(int width, int height)
 }
 
 void Game::SpawnBomb(const InputState& input) {
-  if (!input.mouseReleased) return;
+  if (!input.throwPressed) return;
+  if (!input.mouseDown) return;
 
   // Drag vector: down-right is positive in screen coords.
   const Vec2 drag = input.mouseDownPos - input.mousePos;
@@ -101,8 +102,8 @@ void Game::FixedUpdate(float dt, const InputState& input) {
     m_rewind.PushFrame(m_frameStates);
   }
 
-  // Rewind mode
-  if (input.rewindHeld && m_stamina > 0.0f) {
+  // Rewind mode (toggle)
+  if (input.rewindToggledOn && m_stamina > 0.0f) {
     std::vector<RewindState> s;
     if (m_rewind.PopFrame(s)) {
       auto& p = m_world.Get(m_playerId);

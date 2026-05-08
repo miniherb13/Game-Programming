@@ -8,7 +8,9 @@ struct InputState {
   bool quit = false;
 
   bool jumpPressed = false;
-  bool rewindHeld = false;
+  bool throwPressed = false;
+  bool rewindToggledOn = false;
+  bool rewindTogglePressed = false;
 
   bool mouseDown = false;
   bool mouseReleased = false;

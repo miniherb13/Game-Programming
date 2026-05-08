@@ -6,6 +6,8 @@ namespace cr {
 
 void Input::BeginFrame() {
   m_state.jumpPressed = false;
+  m_state.throwPressed = false;
+  m_state.rewindTogglePressed = false;
   m_state.mouseReleased = false;
 }
 
@@ -19,11 +21,14 @@ void Input::Pump() {
       case SDL_KEYDOWN:
         if (e.key.repeat) break;
         if (e.key.keysym.sym == SDLK_ESCAPE) m_state.quit = true;
-        if (e.key.keysym.sym == SDLK_SPACE) m_state.jumpPressed = true;
-        if (e.key.keysym.sym == SDLK_r) m_state.rewindHeld = true;
+        if (e.key.keysym.sym == SDLK_c) m_state.jumpPressed = true;
+        if (e.key.keysym.sym == SDLK_x) m_state.throwPressed = true;
+        if (e.key.keysym.sym == SDLK_z) {
+          m_state.rewindToggledOn = !m_state.rewindToggledOn;
+          m_state.rewindTogglePressed = true;
+        }
         break;
       case SDL_KEYUP:
-        if (e.key.keysym.sym == SDLK_r) m_state.rewindHeld = false;
         break;
       case SDL_MOUSEMOTION:
         m_state.mousePos = {static_cast<float>(e.motion.x), static_cast<float>(e.motion.y)};
