@@ -19,8 +19,8 @@ void Input::Pump() {
         m_state.quit = true;
         break;
       case SDL_KEYDOWN:
-        if (e.key.repeat) break;
         if (e.key.keysym.sym == SDLK_ESCAPE) m_state.quit = true;
+        if (e.key.repeat && e.key.keysym.sym != SDLK_c) break;
         if (e.key.keysym.sym == SDLK_c) m_state.jumpPressed = true;
         if (e.key.keysym.sym == SDLK_x) m_state.throwPressed = true;
         if (e.key.keysym.sym == SDLK_z) m_state.rewindPressed = true;

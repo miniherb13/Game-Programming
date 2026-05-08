@@ -36,6 +36,7 @@ private:
   float m_scrollSpeed = 240.0f;
   float m_playerScreenX = 140.0f;
   float m_jumpBuffer = 0.0f;
+  float m_coyote = 0.0f;
 
   bool m_fieldActive = false;
   bool m_fieldAttract = true;

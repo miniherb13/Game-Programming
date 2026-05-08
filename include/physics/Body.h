@@ -17,6 +17,7 @@ struct CircleShape {
 struct Body {
   bool active = true;
   bool isStatic = false;
+  bool onGround = false;
 
   ShapeType shapeType = ShapeType::Circle;
   CircleShape circle{};

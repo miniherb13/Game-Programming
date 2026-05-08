@@ -45,6 +45,7 @@ void PhysicsWorld::SolveBounds(Body& b) {
   if (b.pos.y + r > m_bounds.groundY) {
     b.pos.y = m_bounds.groundY - r;
     if (b.vel.y > 0.0f) b.vel.y = -b.vel.y * b.restitution;
+    b.onGround = true;
   }
 
   // ceiling
@@ -56,6 +57,7 @@ void PhysicsWorld::SolveBounds(Body& b) {
 
 void PhysicsWorld::Step(float dt) {
   for (auto& b : m_bodies) {
+    b.onGround = false;
     Integrate(b, dt);
     SolveBounds(b);
     b.ClearForces();

@@ -91,7 +91,7 @@ void Game::ApplyGravityField() {
 void Game::FixedUpdate(float dt, const InputState& input) {
   if (input.quit) m_quit = true;
 
-  if (input.jumpPressed) m_jumpBuffer = 0.10f;
+  if (input.jumpPressed) m_jumpBuffer = 0.18f;
   m_jumpBuffer = std::max(0.0f, m_jumpBuffer - dt);
 
   // Save states first (for rewind)
@@ -137,16 +137,21 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   }
 
   // simple run forward (world-space) + jump buffer
-  m_world.Get(m_playerId).vel.x = m_scrollSpeed;
+  auto& p = m_world.Get(m_playerId);
+  p.vel.x = m_scrollSpeed;
+
+  // coyote time (allow jump slightly after leaving ground)
+  if (p.onGround) {
+    m_coyote = 0.10f;
+  } else {
+    m_coyote = std::max(0.0f, m_coyote - dt);
+  }
+
   if (m_jumpBuffer > 0.0f) {
-    auto& p = m_world.Get(m_playerId);
-    const float groundY = static_cast<float>(m_h - 40);
-    const float footY = p.pos.y + p.circle.radius;
-    const bool nearGround = (footY >= groundY - 1.5f);
-    const bool stableY = (std::abs(p.vel.y) < 35.0f);
-    if (nearGround && stableY) {
+    if (p.onGround || m_coyote > 0.0f) {
       p.vel.y = -520.0f;
       m_jumpBuffer = 0.0f;
+      m_coyote = 0.0f;
     }
   }
 
