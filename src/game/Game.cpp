@@ -94,7 +94,9 @@ void Game::FixedUpdate(float dt, const InputState& input) {
 
   m_lastInput = input;
 
-  if (input.jumpPressed) m_jumpBuffer = 0.18f;
+  // Keep jump intent for longer (runner-friendly).
+  if (input.jumpPressed) m_jumpBuffer = 0.50f;
+  if (input.jumpHeld) m_jumpBuffer = std::max(m_jumpBuffer, 0.10f);
   m_jumpBuffer = std::max(0.0f, m_jumpBuffer - dt);
 
   // Save states first (for rewind)
