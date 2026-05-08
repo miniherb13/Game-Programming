@@ -52,15 +52,6 @@ void PhysicsWorld::SolveBounds(Body& b) {
     b.pos.y = m_bounds.ceilingY + r;
     if (b.vel.y < 0.0f) b.vel.y = -b.vel.y * b.restitution;
   }
-
-  // walls
-  if (b.pos.x - r < m_bounds.left) {
-    b.pos.x = m_bounds.left + r;
-    if (b.vel.x < 0.0f) b.vel.x = -b.vel.x * b.restitution;
-  } else if (b.pos.x + r > m_bounds.right) {
-    b.pos.x = m_bounds.right - r;
-    if (b.vel.x > 0.0f) b.vel.x = -b.vel.x * b.restitution;
-  }
 }
 
 void PhysicsWorld::Step(float dt) {

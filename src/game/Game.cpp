@@ -17,6 +17,11 @@ static SDL_Rect RectFromCircle(const Vec2& p, float r) {
   return out;
 }
 
+float Game::CameraX() const {
+  const auto& p = m_world.Bodies().at(static_cast<std::size_t>(m_playerId));
+  return p.pos.x - m_playerScreenX;
+}
+
 Game::Game(int width, int height)
     : m_w(width),
       m_h(height),
@@ -86,6 +91,9 @@ void Game::ApplyGravityField() {
 void Game::FixedUpdate(float dt, const InputState& input) {
   if (input.quit) m_quit = true;
 
+  if (input.jumpPressed) m_jumpBuffer = 0.10f;
+  m_jumpBuffer = std::max(0.0f, m_jumpBuffer - dt);
+
   // Save states first (for rewind)
   {
     auto& p = m_world.Get(m_playerId);
@@ -128,13 +136,17 @@ void Game::FixedUpdate(float dt, const InputState& input) {
     }
   }
 
-  // simple run forward
-  m_world.Get(m_playerId).vel.x = 240.0f;
-  if (input.jumpPressed) {
+  // simple run forward (world-space) + jump buffer
+  m_world.Get(m_playerId).vel.x = m_scrollSpeed;
+  if (m_jumpBuffer > 0.0f) {
     auto& p = m_world.Get(m_playerId);
-    // allow jump if near ground (demo heuristic)
-    if (p.pos.y > (m_h - 40.0f - p.circle.radius - 2.0f)) {
+    const float groundY = static_cast<float>(m_h - 40);
+    const float footY = p.pos.y + p.circle.radius;
+    const bool nearGround = (footY >= groundY - 1.5f);
+    const bool stableY = (std::abs(p.vel.y) < 35.0f);
+    if (nearGround && stableY) {
       p.vel.y = -520.0f;
+      m_jumpBuffer = 0.0f;
     }
   }
 
@@ -148,6 +160,8 @@ void Game::FixedUpdate(float dt, const InputState& input) {
 }
 
 void Game::Render(SDL_Renderer* r) const {
+  const float camX = CameraX();
+
   // Ground
   SDL_SetRenderDrawColor(r, 20, 20, 24, 255);
   SDL_Rect ground{0, m_h - 40, m_w, 40};
@@ -157,7 +171,7 @@ void Game::Render(SDL_Renderer* r) const {
   {
     const auto& p = m_world.Bodies().at(static_cast<std::size_t>(m_playerId));
     SDL_SetRenderDrawColor(r, 60, 200, 255, 255);
-    SDL_Rect rc = RectFromCircle(p.pos, p.circle.radius);
+    SDL_Rect rc = RectFromCircle({p.pos.x - camX, p.pos.y}, p.circle.radius);
     SDL_RenderFillRect(r, &rc);
   }
 
@@ -166,14 +180,14 @@ void Game::Render(SDL_Renderer* r) const {
   for (int id : m_bombIds) {
     const auto& b = m_world.Bodies().at(static_cast<std::size_t>(id));
     if (!b.active) continue;
-    SDL_Rect rc = RectFromCircle(b.pos, b.circle.radius);
+    SDL_Rect rc = RectFromCircle({b.pos.x - camX, b.pos.y}, b.circle.radius);
     SDL_RenderFillRect(r, &rc);
   }
 
   // Field visualization
   if (m_fieldActive) {
     SDL_SetRenderDrawColor(r, 180, 80, 255, 255);
-    SDL_Rect rc = RectFromCircle(m_fieldCenter, m_fieldRadius);
+    SDL_Rect rc = RectFromCircle({m_fieldCenter.x - camX, m_fieldCenter.y}, m_fieldRadius);
     SDL_RenderDrawRect(r, &rc);
   }
 

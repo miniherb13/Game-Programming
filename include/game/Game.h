@@ -22,6 +22,7 @@ public:
 private:
   void SpawnBomb(const InputState& input);
   void ApplyGravityField();
+  float CameraX() const;
 
   int m_w = 0;
   int m_h = 0;
@@ -31,6 +32,10 @@ private:
 
   int m_playerId = -1;
   std::vector<int> m_bombIds;
+
+  float m_scrollSpeed = 240.0f;
+  float m_playerScreenX = 140.0f;
+  float m_jumpBuffer = 0.0f;
 
   bool m_fieldActive = false;
   bool m_fieldAttract = true;
