@@ -22,9 +22,10 @@ cmake --build build
 
 ## Controls
 
-- `LMB 드래그 후 놓기`: 폭탄 투척(데모: 원형 투사체)
-- `Space`: 점프(데모: 플레이어 원)
-- `R`: 3초 시간 역행(데모: 플레이어/폭탄 상태)
+- `LMB 드래그 후 클릭/놓기`: 폭탄 투척
+- `Space`: 점프
+- `E`: 시간 역행
+- `WASD`: 이동
 - `Esc`: 종료
 
 ## Repo structure
