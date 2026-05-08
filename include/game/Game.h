@@ -48,6 +48,8 @@ private:
   RewindBuffer m_rewind;
   std::vector<RewindState> m_frameStates;
   float m_stamina = 3.0f; // seconds of rewind budget
+
+  InputState m_lastInput{};
 };
 
 } // namespace cr

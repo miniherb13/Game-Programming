@@ -91,6 +91,8 @@ void Game::ApplyGravityField() {
 void Game::FixedUpdate(float dt, const InputState& input) {
   if (input.quit) m_quit = true;
 
+  m_lastInput = input;
+
   if (input.jumpPressed) m_jumpBuffer = 0.18f;
   m_jumpBuffer = std::max(0.0f, m_jumpBuffer - dt);
 
@@ -167,6 +169,29 @@ void Game::FixedUpdate(float dt, const InputState& input) {
 
 void Game::Render(SDL_Renderer* r) const {
   const float camX = CameraX();
+
+  // Input debug indicators (C / X / Z)
+  // Bright = Held, dim = not held. Border flash = pressed this frame.
+  auto drawKey = [&](int x, int y, bool held, bool pressed, SDL_Color base) {
+    SDL_Rect bg{x, y, 22, 22};
+    SDL_SetRenderDrawColor(r, 18, 18, 22, 255);
+    SDL_RenderFillRect(r, &bg);
+
+    SDL_Color c = base;
+    if (!held) { c.r = static_cast<Uint8>(c.r / 3); c.g = static_cast<Uint8>(c.g / 3); c.b = static_cast<Uint8>(c.b / 3); }
+    SDL_SetRenderDrawColor(r, c.r, c.g, c.b, 255);
+    SDL_Rect fg{x + 3, y + 3, 16, 16};
+    SDL_RenderFillRect(r, &fg);
+
+    if (pressed) {
+      SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+      SDL_RenderDrawRect(r, &bg);
+    }
+  };
+
+  drawKey(16, 34, m_lastInput.jumpHeld, m_lastInput.jumpPressed, SDL_Color{90, 220, 255, 255});   // C
+  drawKey(42, 34, m_lastInput.throwHeld, m_lastInput.throwPressed, SDL_Color{255, 220, 80, 255}); // X
+  drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, SDL_Color{180, 80, 255, 255}); // Z
 
   // Ground
   SDL_SetRenderDrawColor(r, 20, 20, 24, 255);

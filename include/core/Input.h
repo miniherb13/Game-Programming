@@ -11,6 +11,10 @@ struct InputState {
   bool throwPressed = false;
   bool rewindPressed = false;
 
+  bool jumpHeld = false;
+  bool throwHeld = false;
+  bool rewindHeld = false;
+
   bool mouseDown = false;
   bool mouseReleased = false;
   Vec2 mousePos{};
