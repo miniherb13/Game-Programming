@@ -5,6 +5,7 @@
 
 #include <SDL.h>
 #include <algorithm>
+#include <string>
 
 namespace cr {
 
