@@ -6,6 +6,8 @@
 
 #include <vector>
 
+struct SDL_Renderer;
+
 namespace cr {
 
 class Game {
@@ -13,7 +15,7 @@ public:
   Game(int width, int height);
 
   void FixedUpdate(float dt, const InputState& input);
-  void Render(struct SDL_Renderer* r) const;
+  void Render(SDL_Renderer* r) const;
 
   bool WantsQuit() const { return m_quit; }
 
