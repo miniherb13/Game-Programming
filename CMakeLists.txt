@@ -38,10 +38,13 @@ target_include_directories(chrono_rush_demo PRIVATE
   include
 )
 
-if(TARGET SDL2::SDL2)
-  target_link_libraries(chrono_rush_demo PRIVATE SDL2::SDL2)
+if(TARGET SDL2::SDL2-static)
+  # Prefer static linking on Windows to avoid missing DLL issues.
+  target_link_libraries(chrono_rush_demo PRIVATE SDL2::SDL2-static)
 elseif(TARGET SDL2-static)
   target_link_libraries(chrono_rush_demo PRIVATE SDL2-static)
+elseif(TARGET SDL2::SDL2)
+  target_link_libraries(chrono_rush_demo PRIVATE SDL2::SDL2)
 elseif(TARGET SDL2)
   target_link_libraries(chrono_rush_demo PRIVATE SDL2)
 else()
