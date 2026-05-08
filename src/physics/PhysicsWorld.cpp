@@ -40,9 +40,10 @@ void PhysicsWorld::SolveBounds(Body& b) {
   if (!b.active || b.invMass <= 0.0f) return;
 
   const float r = b.circle.radius;
+  constexpr float eps = 0.01f;
 
   // ground
-  if (b.pos.y + r > m_bounds.groundY) {
+  if (b.pos.y + r >= m_bounds.groundY - eps) {
     b.pos.y = m_bounds.groundY - r;
     if (b.vel.y > 0.0f) b.vel.y = -b.vel.y * b.restitution;
     b.onGround = true;
