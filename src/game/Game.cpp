@@ -140,6 +140,11 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   auto& p = m_world.Get(m_playerId);
   p.vel.x = m_scrollSpeed;
 
+  SpawnBomb(input);
+  ApplyGravityField();
+
+  m_world.Step(dt);
+
   // coyote time (allow jump slightly after leaving ground)
   if (p.onGround) {
     m_coyote = 0.10f;
@@ -147,18 +152,14 @@ void Game::FixedUpdate(float dt, const InputState& input) {
     m_coyote = std::max(0.0f, m_coyote - dt);
   }
 
-  if (m_jumpBuffer > 0.0f) {
-    if (p.onGround || m_coyote > 0.0f) {
-      p.vel.y = -520.0f;
-      m_jumpBuffer = 0.0f;
-      m_coyote = 0.0f;
-    }
+  // Apply jump AFTER physics so "landing frame" isn't delayed.
+  if (m_jumpBuffer > 0.0f && (p.onGround || m_coyote > 0.0f)) {
+    p.vel.y = -520.0f;
+    p.pos.y -= 1.0f; // ensure we visually leave ground this frame
+    p.onGround = false;
+    m_jumpBuffer = 0.0f;
+    m_coyote = 0.0f;
   }
-
-  SpawnBomb(input);
-  ApplyGravityField();
-
-  m_world.Step(dt);
 
   if (m_fieldActive) m_fieldTimeLeft = std::max(0.0f, m_fieldTimeLeft - dt);
   m_stamina = std::min(3.0f, m_stamina + dt * 0.15f);
