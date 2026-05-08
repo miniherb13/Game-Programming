@@ -156,6 +156,12 @@ void Game::FixedUpdate(float dt, const InputState& input) {
 
   // Apply jump AFTER physics so "landing frame" isn't delayed.
   if (m_jumpBuffer > 0.0f && (p.onGround || m_coyote > 0.0f)) {
+    Log(LogLevel::Info,
+        std::string("JUMP! onGround=") + (p.onGround ? "1" : "0") +
+            " coyote=" + std::to_string(m_coyote) +
+            " buffer=" + std::to_string(m_jumpBuffer) +
+            " posY=" + std::to_string(p.pos.y) +
+            " velY=" + std::to_string(p.vel.y));
     p.vel.y = -520.0f;
     p.pos.y -= 1.0f; // ensure we visually leave ground this frame
     p.onGround = false;
