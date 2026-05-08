@@ -25,7 +25,7 @@ cmake --build build
 - `마우스 드래그`: 조준
 - `X`: 폭탄 던지기
 - `C`: 점프
-- `Z`: 시간 역행(토글)
+- `Z`: 시간 역행(3초 전으로)
 - `Esc`: 종료
 
 ## Repo structure

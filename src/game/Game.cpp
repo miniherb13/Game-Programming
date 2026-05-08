@@ -102,10 +102,17 @@ void Game::FixedUpdate(float dt, const InputState& input) {
     m_rewind.PushFrame(m_frameStates);
   }
 
-  // Rewind mode (toggle)
-  if (input.rewindToggledOn && m_stamina > 0.0f) {
+  // Rewind: jump back ~3 seconds on press
+  if (input.rewindPressed && m_stamina >= 3.0f) {
     std::vector<RewindState> s;
-    if (m_rewind.PopFrame(s)) {
+    bool any = false;
+    const int frames = 180;
+    for (int i = 0; i < frames; i++) {
+      if (!m_rewind.PopFrame(s)) break;
+      any = true;
+    }
+
+    if (any) {
       auto& p = m_world.Get(m_playerId);
       p.active = s[0].active;
       p.pos = s[0].pos;
@@ -117,9 +124,8 @@ void Game::FixedUpdate(float dt, const InputState& input) {
         b.pos = s[1 + i].pos;
         b.vel = s[1 + i].vel;
       }
+      m_stamina = std::max(0.0f, m_stamina - 3.0f);
     }
-    m_stamina = std::max(0.0f, m_stamina - dt);
-    return; // skip physics while rewinding
   }
 
   // simple run forward
