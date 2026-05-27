@@ -46,6 +46,10 @@ void PhysicsWorld::SolveBounds(Body& b) {
   if (b.pos.y + r >= m_bounds.groundY - eps) {
     b.pos.y = m_bounds.groundY - r;
     if (b.vel.y > 0.0f) b.vel.y = -b.vel.y * b.restitution;
+    if (b.groundFriction > 0.0f) {
+      const float keep = std::clamp(1.0f - b.groundFriction, 0.0f, 1.0f);
+      b.vel.x *= keep;
+    }
     b.onGround = true;
   }
 

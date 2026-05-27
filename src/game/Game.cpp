@@ -33,60 +33,31 @@ Game::Game(int width, int height)
   p.restitution = 0.0f;
   p.linearDamping = 0.8f;
 
-  // player + up to 16 bombs (demo)
-  m_rewind.SetObjectCount(1 + 16);
-  m_frameStates.resize(1 + 16);
+  m_bombs.InitPool(m_world);
+  m_bombs.SetExplosionHandler([this](Vec2 center) { m_fields.SpawnFromExplosion(center); });
+
+  SpawnProps();
+
 }
 
-void Game::SpawnBomb(const InputState& input) {
-  if (!input.throwPressed) return;
-  if (!input.mouseDown) return;
+void Game::SpawnProps() {
+  const float groundY = static_cast<float>(m_h - 40);
+  constexpr int propCount = 14;
+  m_propIds.reserve(propCount);
 
-  // Drag vector: down-right is positive in screen coords.
-  const Vec2 drag = input.mouseDownPos - input.mousePos;
-  const float strength = 6.5f;
-  Vec2 v = strength * drag;
-
-  const int id = m_world.CreateCircle(12.0f, m_world.Get(m_playerId).pos + Vec2{24.0f, -10.0f}, 0.7f, false);
-  auto& b = m_world.Get(id);
-  b.restitution = 0.65f;
-  b.vel = v;
-
-  m_bombIds.push_back(id);
-  if (m_bombIds.size() > 16) {
-    m_bombIds.erase(m_bombIds.begin());
+  for (int i = 0; i < propCount; i++) {
+    const float x = 320.0f + static_cast<float>(i) * 110.0f;
+    const int id = m_world.CreateCircle(18.0f, {x, groundY - 18.0f}, 1.8f, false);
+    auto& crate = m_world.Get(id);
+    crate.restitution = 0.25f;
+    crate.linearDamping = 1.2f;
+    crate.groundFriction = 0.85f;
+    m_propIds.push_back(id);
   }
-
-  // Arm: trigger a field shortly after spawn (demo stand-in for "explosion")
-  m_fieldActive = true;
-  m_fieldAttract = true;
-  m_fieldTimeLeft = 0.65f;
-  m_fieldCenter = b.pos;
 }
 
-void Game::ApplyGravityField() {
-  if (!m_fieldActive) return;
-  if (m_fieldTimeLeft <= 0.0f) {
-    m_fieldActive = false;
-    return;
-  }
-
-  const auto applyTo = [&](Body& body) {
-    if (body.invMass <= 0.0f || !body.active) return;
-    const Vec2 d = body.pos - m_fieldCenter;
-    const float distSq = std::max(d.LenSq(), 36.0f);
-    const float dist = std::sqrt(distSq);
-    if (dist > m_fieldRadius) return;
-
-    const Vec2 dir = d / dist;
-    const float mag = m_fieldK / distSq;
-    const Vec2 f = (m_fieldAttract ? -1.0f : 1.0f) * mag * dir;
-    body.force += f;
-  };
-
-  // apply to player + bombs (demo)
-  applyTo(m_world.Get(m_playerId));
-  for (int id : m_bombIds) applyTo(m_world.Get(id));
+Vec2 Game::MouseWorldPos(const InputState& input) const {
+  return {input.mousePos.x + CameraX(), input.mousePos.y};
 }
 
 void Game::FixedUpdate(float dt, const InputState& input) {
@@ -99,56 +70,54 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   if (input.jumpHeld) m_jumpBuffer = std::max(m_jumpBuffer, 0.10f);
   m_jumpBuffer = std::max(0.0f, m_jumpBuffer - dt);
 
-  // Save states first (for rewind)
-  {
-    auto& p = m_world.Get(m_playerId);
-    m_frameStates[0] = {p.active, p.pos, p.vel};
+  m_snapshotScratch.Capture(m_world,
+                            m_playerId,
+                            m_jumpBuffer,
+                            m_coyote,
+                            m_stamina,
+                            m_bombs,
+                            m_fields,
+                            m_propIds);
+  m_rewind.PushFrame(m_snapshotScratch);
 
-    for (std::size_t i = 0; i < 16; i++) {
-      if (i < m_bombIds.size()) {
-        auto& b = m_world.Get(m_bombIds[i]);
-        m_frameStates[1 + i] = {b.active, b.pos, b.vel};
-      } else {
-        m_frameStates[1 + i] = {false, {}, {}};
-      }
-    }
-    m_rewind.PushFrame(m_frameStates);
-  }
-
-  // Rewind: jump back ~3 seconds on press
   if (input.rewindPressed && m_stamina >= 3.0f) {
-    std::vector<RewindState> s;
     bool any = false;
-    const int frames = 180;
-    for (int i = 0; i < frames; i++) {
-      if (!m_rewind.PopFrame(s)) break;
+    const std::size_t frames = m_rewind.Capacity();
+    for (std::size_t i = 0; i < frames; i++) {
+      if (!m_rewind.PopFrame(m_snapshotScratch)) break;
       any = true;
     }
 
     if (any) {
-      auto& p = m_world.Get(m_playerId);
-      p.active = s[0].active;
-      p.pos = s[0].pos;
-      p.vel = s[0].vel;
-
-      for (std::size_t i = 0; i < 16 && i < m_bombIds.size(); i++) {
-        auto& b = m_world.Get(m_bombIds[i]);
-        b.active = s[1 + i].active;
-        b.pos = s[1 + i].pos;
-        b.vel = s[1 + i].vel;
-      }
+      m_snapshotScratch.Apply(m_world,
+                              m_playerId,
+                              m_jumpBuffer,
+                              m_coyote,
+                              m_stamina,
+                              m_bombs,
+                              m_fields,
+                              m_propIds);
       m_stamina = std::max(0.0f, m_stamina - 3.0f);
     }
   }
 
-  // simple run forward (world-space) + jump buffer
   auto& p = m_world.Get(m_playerId);
   p.vel.x = m_scrollSpeed;
 
-  SpawnBomb(input);
-  ApplyGravityField();
+  m_bombs.TryThrow(input, m_world, p);
+
+  if (input.debugPressed) m_fields.ToggleDebug();
+
+  if (input.fieldPressed && !m_bombs.IsAiming(input)) {
+    const FieldMode mode = input.shiftHeld ? FieldMode::Repel : FieldMode::Attract;
+    m_fields.TrySpawnManual(MouseWorldPos(input), mode);
+  }
+
+  m_fields.ApplyForces(m_world, m_playerId, m_bombs.BodyIds(), m_propIds);
 
   m_world.Step(dt);
+  m_fields.FixedUpdate(dt);
+  m_bombs.FixedUpdate(dt, m_world, m_playerId);
 
   // coyote time (allow jump slightly after leaving ground)
   if (p.onGround) {
@@ -172,7 +141,6 @@ void Game::FixedUpdate(float dt, const InputState& input) {
     m_coyote = 0.0f;
   }
 
-  if (m_fieldActive) m_fieldTimeLeft = std::max(0.0f, m_fieldTimeLeft - dt);
   m_stamina = std::min(3.0f, m_stamina + dt * 0.15f);
 }
 
@@ -201,6 +169,7 @@ void Game::Render(SDL_Renderer* r) const {
   drawKey(16, 34, m_lastInput.jumpHeld, m_lastInput.jumpPressed, SDL_Color{90, 220, 255, 255});   // C
   drawKey(42, 34, m_lastInput.throwHeld, m_lastInput.throwPressed, SDL_Color{255, 220, 80, 255}); // X
   drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, SDL_Color{180, 80, 255, 255}); // Z
+  drawKey(94, 34, m_lastInput.fieldHeld, m_lastInput.fieldPressed, SDL_Color{150, 90, 255, 255});   // V
 
   // Ground
   SDL_SetRenderDrawColor(r, 20, 20, 24, 255);
@@ -215,20 +184,21 @@ void Game::Render(SDL_Renderer* r) const {
     SDL_RenderFillRect(r, &rc);
   }
 
-  // Bombs
-  SDL_SetRenderDrawColor(r, 255, 220, 80, 255);
-  for (int id : m_bombIds) {
-    const auto& b = m_world.Bodies().at(static_cast<std::size_t>(id));
-    if (!b.active) continue;
-    SDL_Rect rc = RectFromCircle({b.pos.x - camX, b.pos.y}, b.circle.radius);
+  for (int id : m_propIds) {
+    const auto& crate = m_world.Get(id);
+    if (!crate.active) continue;
+    SDL_SetRenderDrawColor(r, 150, 110, 80, 255);
+    SDL_Rect rc = RectFromCircle({crate.pos.x - camX, crate.pos.y}, crate.circle.radius);
     SDL_RenderFillRect(r, &rc);
   }
 
-  // Field visualization
-  if (m_fieldActive) {
-    SDL_SetRenderDrawColor(r, 180, 80, 255, 255);
-    SDL_Rect rc = RectFromCircle({m_fieldCenter.x - camX, m_fieldCenter.y}, m_fieldRadius);
-    SDL_RenderDrawRect(r, &rc);
+  m_fields.Render(r, camX);
+  m_bombs.Render(r, camX, m_world, m_world.Get(m_playerId), m_lastInput);
+
+  if (m_fields.DebugEnabled()) {
+    SDL_SetRenderDrawColor(r, 255, 255, 120, 255);
+    SDL_Rect tag{120, 34, 56, 22};
+    SDL_RenderDrawRect(r, &tag);
   }
 
   // Stamina bar (very simple)

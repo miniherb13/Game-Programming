@@ -1,6 +1,8 @@
 #pragma once
 
 #include "core/Input.h"
+#include "game/Bomb.h"
+#include "game/GravityField.h"
 #include "physics/PhysicsWorld.h"
 #include "rewind/RewindBuffer.h"
 
@@ -20,9 +22,9 @@ public:
   bool WantsQuit() const { return m_quit; }
 
 private:
-  void SpawnBomb(const InputState& input);
-  void ApplyGravityField();
+  void SpawnProps();
   float CameraX() const;
+  Vec2 MouseWorldPos(const InputState& input) const;
 
   int m_w = 0;
   int m_h = 0;
@@ -31,22 +33,17 @@ private:
   PhysicsWorld m_world;
 
   int m_playerId = -1;
-  std::vector<int> m_bombIds;
+  BombSystem m_bombs{16};
+  GravityFieldSystem m_fields;
+  std::vector<int> m_propIds;
 
   float m_scrollSpeed = 240.0f;
   float m_playerScreenX = 140.0f;
   float m_jumpBuffer = 0.0f;
   float m_coyote = 0.0f;
 
-  bool m_fieldActive = false;
-  bool m_fieldAttract = true;
-  float m_fieldTimeLeft = 0.0f;
-  Vec2 m_fieldCenter{};
-  float m_fieldRadius = 180.0f;
-  float m_fieldK = 2200000.0f;
-
   RewindBuffer m_rewind;
-  std::vector<RewindState> m_frameStates;
+  GameSnapshot m_snapshotScratch{};
   float m_stamina = 3.0f; // seconds of rewind budget
 
   InputState m_lastInput{};

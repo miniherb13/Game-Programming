@@ -30,7 +30,11 @@ add_executable(chrono_rush_demo
   src/core/Log.cpp
   src/math/Vec2.cpp
   src/physics/PhysicsWorld.cpp
+  src/rewind/BodySnapshot.cpp
   src/rewind/RewindBuffer.cpp
+  src/rewind/Snapshot.cpp
+  src/game/Bomb.cpp
+  src/game/GravityField.cpp
   src/game/Game.cpp
 )
 

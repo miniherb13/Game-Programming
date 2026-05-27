@@ -29,6 +29,7 @@ struct Body {
   float invMass = 1.0f;
   float restitution = 0.4f;
   float linearDamping = 0.0f;
+  float groundFriction = 0.0f; // 0..1, horizontal speed loss on ground contact
 
   int rewindId = -1;
 

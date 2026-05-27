@@ -10,10 +10,14 @@ struct InputState {
   bool jumpPressed = false;
   bool throwPressed = false;
   bool rewindPressed = false;
+  bool fieldPressed = false;
+  bool debugPressed = false;
 
   bool jumpHeld = false;
   bool throwHeld = false;
   bool rewindHeld = false;
+  bool fieldHeld = false;
+  bool shiftHeld = false;
 
   bool mouseDown = false;
   bool mouseReleased = false;

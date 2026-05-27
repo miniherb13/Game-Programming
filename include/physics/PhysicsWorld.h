@@ -20,6 +20,7 @@ public:
 
   int CreateCircle(float radius, Vec2 pos, float mass, bool isStatic);
   Body& Get(int id) { return m_bodies.at(static_cast<std::size_t>(id)); }
+  const Body& Get(int id) const { return m_bodies.at(static_cast<std::size_t>(id)); }
   const std::vector<Body>& Bodies() const { return m_bodies; }
 
   void Step(float dt);
