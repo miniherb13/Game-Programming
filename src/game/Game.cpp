@@ -76,14 +76,12 @@ void Game::SpawnProps() {
     m_propIds.push_back(id);
   }
 
-  // 마지막 상자 위치 기준으로 다음 스폰 X 설정
   m_nextSpawnX = 320.0f + static_cast<float>(propCount) * 110.0f;
 }
 
 void Game::UpdateSpawn() {
   const float camRight = CameraX() + static_cast<float>(m_w) + 300.0f;
 
-  // 난이도에 따라 간격 줄이기 (최소 60)
   m_spawnGap = std::max(60.0f, 110.0f - m_elapsed * 0.3f);
 
   while (m_nextSpawnX < camRight) {
@@ -124,7 +122,6 @@ void Game::Restart() {
   p.vel = {0.0f, 0.0f};
   p.onGround = false;
 
-  // 기존 상자 비활성화
   for (int id : m_propIds) {
     auto& crate = m_world.Get(id);
     crate.active = false;
@@ -191,7 +188,6 @@ void Game::HandleInput(float dt, const InputState& input) {
 void Game::FixedUpdate(float dt, const InputState& input) {
   if (!m_started || m_paused) return;
 
-  // 게임오버 상태면 C키로 재시작
   if (m_gameOver) {
     if (input.jumpPressed) Restart();
     return;
@@ -278,7 +274,6 @@ void Game::FixedUpdate(float dt, const InputState& input) {
     m_coyote = 0.0f;
   }
 
-  // 거리 + 난이도
   m_distance += m_scrollSpeed * dt;
   m_elapsed  += dt;
   m_scrollSpeed = 240.0f + m_elapsed * 1.5f;
@@ -379,7 +374,10 @@ void Game::DrawGameOverOverlay(SDL_Renderer* r) const {
   int y = panel.y + 28;
 
   m_ui.DrawCentered(r, m_w / 2, y, "GAME OVER", title);
-  y += line + 20;
+  y += line + 8;
+  const std::string distText = std::to_string(static_cast<int>(m_distance)) + "m";
+  m_ui.DrawCentered(r, m_w / 2, y, distText.c_str(), SDL_Color{255, 180, 60, 255});
+  y += line + 12;
   m_ui.DrawCentered(r, m_w / 2, y, "C : 재시작", hint);
 
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
@@ -480,6 +478,10 @@ void Game::Render(SDL_Renderer* r) const {
     SDL_Rect distFg{m_w - 260, 16, distFill, 12};
     SDL_SetRenderDrawColor(r, 255, 180, 60, 255);
     SDL_RenderFillRect(r, &distFg);
+
+    // 거리 숫자
+    const std::string distText = std::to_string(static_cast<int>(m_distance)) + "m";
+    m_ui.Draw(r, m_w - 260, 32, distText.c_str(), SDL_Color{255, 180, 60, 255});
   }
 
   if (!m_started) {
