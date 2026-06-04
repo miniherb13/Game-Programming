@@ -6,6 +6,8 @@ namespace cr {
 
 struct InputState {
   bool quit = false;
+  bool pausePressed = false;
+  bool resumePressed = false;
 
   bool jumpPressed = false;
   bool throwPressed = false;

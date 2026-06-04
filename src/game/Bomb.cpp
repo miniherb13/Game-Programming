@@ -19,23 +19,6 @@ SDL_Rect RectFromCircleScreen(Vec2 screenPos, float r) {
   return out;
 }
 
-Vec2 ThrowVelocityFromDrag(Vec2 dragScreen) {
-  const float dragLen = dragScreen.Len();
-  if (dragLen < BombTuning::minDragPixels) return {};
-
-  const float speed =
-      std::clamp(dragLen * BombTuning::throwStrength, BombTuning::minThrowSpeed, BombTuning::maxThrowSpeed);
-  return Normalize(dragScreen) * speed;
-}
-
-bool ShouldThrowNow(const InputState& input) {
-  const Vec2 drag = input.mouseDownPos - input.mousePos;
-  if (drag.LenSq() < BombTuning::minDragPixels * BombTuning::minDragPixels) return false;
-
-  if (input.throwPressed) return true;
-  return input.throwHeld && input.mouseReleased;
-}
-
 } // namespace
 
 BombSlotSnapshot BombSlotSnapshot::Save(const BombSlot& slot, const Body& body) {
@@ -98,12 +81,107 @@ void BombSystem::InitPool(PhysicsWorld& world) {
 }
 
 bool BombSystem::IsAiming(const InputState& input) const {
-  return input.throwHeld && input.mouseDown;
+  return input.throwHeld;
 }
 
-Vec2 BombSystem::PreviewVelocity(const InputState& input) const {
-  if (!IsAiming(input)) return {};
-  return ThrowVelocityFromDrag(input.mouseDownPos - input.mousePos);
+Vec2 BombSystem::LaunchPosition(const Body& player) const {
+  return player.pos + Vec2{BombTuning::spawnOffsetX, BombTuning::spawnOffsetY};
+}
+
+Vec2 BombSystem::ComputeThrowVelocity(const Body& player, Vec2 mouseWorld) const {
+  const Vec2 launch = LaunchPosition(player);
+  Vec2 aim = mouseWorld - launch;
+
+  if (aim.x < BombTuning::minAimForwardX) aim.x = BombTuning::minAimForwardX;
+
+  const float dist = aim.Len();
+  if (dist < BombTuning::minAimDistance) {
+    return Normalize(aim) * BombTuning::minThrowSpeed;
+  }
+
+  const float speed = std::clamp(dist * BombTuning::powerPerDistance,
+                                 BombTuning::minThrowSpeed,
+                                 BombTuning::maxThrowSpeed);
+  return Normalize(aim) * speed;
+}
+
+void BombSystem::SampleTrajectory(Vec2 spawnPos,
+                                  Vec2 velocity,
+                                  float gravityY,
+                                  float groundY,
+                                  std::vector<Vec2>& out) const {
+  out.clear();
+  out.reserve(static_cast<std::size_t>(BombTuning::trajectoryMaxSteps));
+
+  Vec2 pos = spawnPos;
+  Vec2 vel = velocity;
+  const float dt = BombTuning::trajectoryDt;
+  const float r = BombTuning::radius;
+
+  for (int i = 0; i < BombTuning::trajectoryMaxSteps; i++) {
+    out.push_back(pos);
+
+    vel.y += gravityY * dt;
+    pos += vel * dt;
+
+    if (pos.y + r >= groundY) {
+      const Vec2 hit{pos.x, groundY - r};
+      if (out.empty() || (hit - out.back()).LenSq() > 4.0f) out.push_back(hit);
+      break;
+    }
+    if (pos.y < -80.0f) break;
+  }
+}
+
+void BombSystem::DrawDashedTrajectory(SDL_Renderer* r,
+                                      float cameraX,
+                                      const std::vector<Vec2>& points) const {
+  if (points.size() < 2) return;
+
+  SDL_SetRenderDrawColor(r, 255, 220, 90, 210);
+
+  float dashLeft = 0.0f;
+  bool drawing = true;
+
+  for (std::size_t i = 1; i < points.size(); i++) {
+    const Vec2 a{points[i - 1].x - cameraX, points[i - 1].y};
+    const Vec2 b{points[i].x - cameraX, points[i].y};
+    const Vec2 seg = b - a;
+    const float segLen = seg.Len();
+    if (segLen < 0.5f) continue;
+
+    const Vec2 dir = seg / segLen;
+    float traveled = 0.0f;
+
+    while (traveled < segLen) {
+      const float chunk = drawing ? BombTuning::trajectoryDashLen : BombTuning::trajectoryGapLen;
+      const float remain = segLen - traveled;
+      const float step = std::min(chunk - dashLeft, remain);
+
+      const Vec2 p0 = a + dir * traveled;
+      const Vec2 p1 = a + dir * (traveled + step);
+
+      if (drawing) {
+        SDL_RenderDrawLine(r,
+                           static_cast<int>(p0.x),
+                           static_cast<int>(p0.y),
+                           static_cast<int>(p1.x),
+                           static_cast<int>(p1.y));
+      }
+
+      traveled += step;
+      dashLeft += step;
+      if (dashLeft >= chunk) {
+        dashLeft = 0.0f;
+        drawing = !drawing;
+      }
+    }
+  }
+
+  const Vec2 launchScreen{points.front().x - cameraX, points.front().y};
+  SDL_SetRenderDrawColor(r, 255, 200, 60, 255);
+  SDL_Rect dot{static_cast<int>(launchScreen.x) - 3, static_cast<int>(launchScreen.y) - 3, 6, 6};
+  SDL_RenderFillRect(r, &dot);
 }
 
 int BombSystem::AllocateSlot() {
@@ -127,8 +205,7 @@ void BombSystem::ArmSlot(int slotIndex, PhysicsWorld& world, const Body& player,
   auto& b = world.Get(slot.bodyId);
 
   const Vec2 dir = velocity.LenSq() > 1.0f ? Normalize(velocity) : Vec2{1.0f, -0.35f};
-  const Vec2 spawn = player.pos + Vec2{BombTuning::spawnOffsetX, BombTuning::spawnOffsetY} +
-                   dir * (BombTuning::radius + player.circle.radius + 2.0f);
+  const Vec2 spawn = LaunchPosition(player) + dir * (BombTuning::radius + player.circle.radius + 2.0f);
 
   b.active = true;
   b.pos = spawn;
@@ -143,10 +220,10 @@ void BombSystem::ArmSlot(int slotIndex, PhysicsWorld& world, const Body& player,
   slot.prevVelY = 0.0f;
 }
 
-void BombSystem::TryThrow(const InputState& input, PhysicsWorld& world, const Body& player) {
-  if (!ShouldThrowNow(input)) return;
+void BombSystem::TryThrow(const InputState& input, Vec2 mouseWorld, PhysicsWorld& world, const Body& player) {
+  if (!input.throwPressed) return;
 
-  const Vec2 velocity = ThrowVelocityFromDrag(input.mouseDownPos - input.mousePos);
+  const Vec2 velocity = ComputeThrowVelocity(player, mouseWorld);
   if (velocity.LenSq() < 1.0f) return;
 
   const int slot = AllocateSlot();
@@ -241,29 +318,24 @@ void BombSystem::FixedUpdate(float dt, PhysicsWorld& world, int playerId) {
 
 void BombSystem::Render(SDL_Renderer* r,
                         float cameraX,
+                        float groundY,
                         const PhysicsWorld& world,
                         const Body& player,
-                        const InputState& input) const {
-  const Vec2 playerScreen{player.pos.x - cameraX, player.pos.y};
+                        Vec2 mouseWorld) const {
+  const Vec2 velocity = ComputeThrowVelocity(player, mouseWorld);
+  if (velocity.LenSq() > 1.0f) {
+    const Vec2 launch = LaunchPosition(player);
+    std::vector<Vec2> arc;
+    SampleTrajectory(launch, velocity, world.Gravity().y, groundY, arc);
+    DrawDashedTrajectory(r, cameraX, arc);
 
-  if (IsAiming(input)) {
-    const Vec2 vel = PreviewVelocity(input);
-    if (vel.LenSq() > 1.0f) {
-      const Vec2 end = playerScreen + Normalize(vel) * 72.0f;
-      SDL_SetRenderDrawColor(r, 255, 200, 60, 200);
-      SDL_RenderDrawLine(r,
-                         static_cast<int>(playerScreen.x),
-                         static_cast<int>(playerScreen.y),
-                         static_cast<int>(end.x),
-                         static_cast<int>(end.y));
-    }
-
-    SDL_SetRenderDrawColor(r, 255, 220, 80, 120);
+    const Vec2 mouseScreen{mouseWorld.x - cameraX, mouseWorld.y};
+    SDL_SetRenderDrawColor(r, 255, 255, 255, 140);
     SDL_RenderDrawLine(r,
-                       static_cast<int>(input.mouseDownPos.x),
-                       static_cast<int>(input.mouseDownPos.y),
-                       static_cast<int>(input.mousePos.x),
-                       static_cast<int>(input.mousePos.y));
+                       static_cast<int>(launch.x - cameraX),
+                       static_cast<int>(launch.y),
+                       static_cast<int>(mouseScreen.x),
+                       static_cast<int>(mouseScreen.y));
   }
 
   for (const auto& slot : m_slots) {

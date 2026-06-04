@@ -14,6 +14,8 @@ void Input::BeginFrame() {
   m_state.rewindPressed = false;
   m_state.fieldPressed = false;
   m_state.debugPressed = false;
+  m_state.pausePressed = false;
+  m_state.resumePressed = false;
   m_state.mouseReleased = false;
 }
 
@@ -25,8 +27,9 @@ void Input::Pump() {
         m_state.quit = true;
         break;
       case SDL_KEYDOWN:
-        if (e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) m_state.quit = true;
         if (e.key.repeat) break;
+        if (e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) m_state.pausePressed = true;
+        if (e.key.keysym.scancode == SDL_SCANCODE_SPACE) m_state.resumePressed = true;
         if (e.key.keysym.scancode == SDL_SCANCODE_C) m_state.jumpPressed = true;
         if (e.key.keysym.scancode == SDL_SCANCODE_X) m_state.throwPressed = true;
         if (e.key.keysym.scancode == SDL_SCANCODE_Z) m_state.rewindPressed = true;

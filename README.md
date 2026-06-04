@@ -22,14 +22,15 @@ cmake --build build
 
 ## Controls
 
-- `마우스 드래그`: 조준
-- `X`: 폭탄 던지기
+- `마우스 이동`: 폭탄 조준(점선 궤도 표시, 멀수록 세기 증가)
+- `X`: 조준 궤도대로 폭탄 발사
 - `V`: 중력장 배치 (인력)
 - `Shift` + `V`: 중력장 배치 (척력)
 - `G`: 중력장 디버그(힘 벡터) 토글
 - `C`: 점프
 - `Z`: 시간 역행(3초 전으로)
-- `Esc`: 종료
+- `Esc`: 일시정지 → 일시정지 중 `Esc` 한 번 더: 종료
+- `Space`: 일시정지 중 재개(Resume)
 
 ## Repo structure
 
@@ -74,4 +75,5 @@ cmake --build build
 - **객체 ID 정책**: 폭탄/필드/상자는 고정 슬롯 인덱스(풀 bodyId는 슬롯에 묶임)
 - **역행 규칙**: 해당 프레임의 플레이어·폭탄·중력장·상자 상태를 그대로 복원. 폭발/필드 생성 이후 `Z`로 되감으면 그 이전 상태로 돌아감
 
-상세: [docs/snapshot-agreement.md](docs/snapshot-agreement.md)
+상세: [docs/snapshot-agreement.md](docs/snapshot-agreement.md)  
+팀원 B 작업 순서: [docs/team-b-tasks.md](docs/team-b-tasks.md)

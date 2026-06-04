@@ -49,15 +49,19 @@ int App::Run() {
 
   while (!game.WantsQuit()) {
     const double dt = clock.TickSeconds();
-    acc += dt;
 
     input.BeginFrame();
     input.Pump();
+    game.HandleInput(input.State());
 
-    // Fixed update
-    while (acc >= fixedDt) {
-      game.FixedUpdate(fixedDt, input.State());
-      acc -= fixedDt;
+    if (!game.IsPaused()) {
+      acc += dt;
+      while (acc >= fixedDt) {
+        game.FixedUpdate(fixedDt, input.State());
+        acc -= fixedDt;
+      }
+    } else {
+      acc = 0.0;
     }
 
     SDL_SetRenderDrawColor(renderer, 12, 12, 16, 255);

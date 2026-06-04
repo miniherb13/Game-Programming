@@ -60,10 +60,29 @@ Vec2 Game::MouseWorldPos(const InputState& input) const {
   return {input.mousePos.x + CameraX(), input.mousePos.y};
 }
 
-void Game::FixedUpdate(float dt, const InputState& input) {
-  if (input.quit) m_quit = true;
+void Game::HandleInput(const InputState& input) {
+  if (input.quit) {
+    m_quit = true;
+    return;
+  }
+
+  if (input.pausePressed) {
+    if (m_paused) {
+      m_quit = true;
+    } else {
+      m_paused = true;
+    }
+  }
+
+  if (m_paused && input.resumePressed) {
+    m_paused = false;
+  }
 
   m_lastInput = input;
+}
+
+void Game::FixedUpdate(float dt, const InputState& input) {
+  if (m_paused) return;
 
   // Keep jump intent for longer (runner-friendly).
   if (input.jumpPressed) m_jumpBuffer = 0.50f;
@@ -104,7 +123,7 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   auto& p = m_world.Get(m_playerId);
   p.vel.x = m_scrollSpeed;
 
-  m_bombs.TryThrow(input, m_world, p);
+  m_bombs.TryThrow(input, MouseWorldPos(input), m_world, p);
 
   if (input.debugPressed) m_fields.ToggleDebug();
 
@@ -193,7 +212,8 @@ void Game::Render(SDL_Renderer* r) const {
   }
 
   m_fields.Render(r, camX);
-  m_bombs.Render(r, camX, m_world, m_world.Get(m_playerId), m_lastInput);
+  const float groundY = static_cast<float>(m_h - 40);
+  m_bombs.Render(r, camX, groundY, m_world, m_world.Get(m_playerId), MouseWorldPos(m_lastInput));
 
   if (m_fields.DebugEnabled()) {
     SDL_SetRenderDrawColor(r, 255, 255, 120, 255);
@@ -215,6 +235,36 @@ void Game::Render(SDL_Renderer* r) const {
     SDL_Rect fg{x, y, fill, barH};
     SDL_SetRenderDrawColor(r, 110, 255, 140, 255);
     SDL_RenderFillRect(r, &fg);
+  }
+
+  if (m_paused) {
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r, 0, 0, 0, 170);
+    SDL_Rect dim{0, 0, m_w, m_h};
+    SDL_RenderFillRect(r, &dim);
+
+    SDL_SetRenderDrawColor(r, 240, 240, 250, 255);
+    SDL_Rect titleBg{m_w / 2 - 200, m_h / 2 - 56, 400, 112};
+    SDL_RenderFillRect(r, &titleBg);
+    SDL_SetRenderDrawColor(r, 90, 90, 110, 255);
+    SDL_RenderDrawRect(r, &titleBg);
+
+    SDL_SetRenderDrawColor(r, 255, 220, 90, 255);
+    SDL_Rect pausedLabel{m_w / 2 - 72, m_h / 2 - 28, 144, 10};
+    SDL_RenderFillRect(r, &pausedLabel);
+
+    SDL_SetRenderDrawColor(r, 120, 220, 255, 255);
+    SDL_Rect spaceKey{m_w / 2 - 48, m_h / 2 + 8, 44, 22};
+    SDL_RenderFillRect(r, &spaceKey);
+    SDL_SetRenderDrawColor(r, 200, 240, 255, 255);
+    SDL_Rect spaceInner{spaceKey.x + 4, spaceKey.y + 8, 36, 6};
+    SDL_RenderFillRect(r, &spaceInner);
+
+    SDL_SetRenderDrawColor(r, 180, 180, 195, 255);
+    SDL_Rect escHint{m_w / 2 + 8, m_h / 2 + 14, 28, 10};
+    SDL_RenderFillRect(r, &escHint);
+
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
   }
 }
 

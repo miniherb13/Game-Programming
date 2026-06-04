@@ -16,10 +16,12 @@ class Game {
 public:
   Game(int width, int height);
 
+  void HandleInput(const InputState& input);
   void FixedUpdate(float dt, const InputState& input);
   void Render(SDL_Renderer* r) const;
 
   bool WantsQuit() const { return m_quit; }
+  bool IsPaused() const { return m_paused; }
 
 private:
   void SpawnProps();
@@ -29,6 +31,7 @@ private:
   int m_w = 0;
   int m_h = 0;
   bool m_quit = false;
+  bool m_paused = false;
 
   PhysicsWorld m_world;
 
