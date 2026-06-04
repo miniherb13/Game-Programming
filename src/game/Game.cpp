@@ -6,6 +6,7 @@
 #include <SDL.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <string>
 
 namespace cr {
@@ -45,15 +46,21 @@ Game::Game(int width, int height)
   m_bombs.InitPool(m_world);
   m_bombs.SetExplosionHandler([this](Vec2 center) {
     m_fields.SpawnBlackHole(center);
+    // 땅 장애물 폭발 제거
     for (int id : m_propIds) {
       auto& crate = m_world.Get(id);
       if (!crate.active) continue;
       const float dx = crate.pos.x - center.x;
       const float dy = crate.pos.y - center.y;
-      const float dist = std::sqrt(dx * dx + dy * dy);
-      if (dist < 120.0f) {
-        crate.active = false;
-      }
+      if (std::sqrt(dx * dx + dy * dy) < 120.0f) crate.active = false;
+    }
+    // 떨어지는 장애물 폭발 제거
+    for (int id : m_fallingIds) {
+      auto& crate = m_world.Get(id);
+      if (!crate.active) continue;
+      const float dx = crate.pos.x - center.x;
+      const float dy = crate.pos.y - center.y;
+      if (std::sqrt(dx * dx + dy * dy) < 120.0f) crate.active = false;
     }
   });
 
@@ -75,54 +82,137 @@ void Game::InitRenderer(SDL_Renderer* /*renderer*/) {
 }
 
 void Game::SpawnProps() {
-  const float groundY = static_cast<float>(m_h - 40);
-  constexpr int propCount = 14;
+  // 초반 상자 몇 개만 배치
+  constexpr int propCount = 5;
   m_propIds.reserve(propCount);
 
   for (int i = 0; i < propCount; i++) {
-    const float x = 320.0f + static_cast<float>(i) * 110.0f;
+    const float x = 400.0f + static_cast<float>(i) * 200.0f;
+    SpawnPattern(x, 0); // 처음엔 전부 낮은 상자
+  }
+
+  m_nextSpawnX = 400.0f + static_cast<float>(propCount) * 200.0f;
+}
+
+// 패턴 종류
+// 0: 낮은 상자 1개 (점프)
+// 1: 높은 상자 1개 (폭탄)
+// 2: 낮은 상자 2개 연속 (점프 타이밍)
+// 3: 낮은 + 높은 조합 (점프 + 폭탄)
+void Game::SpawnPattern(float x, int pattern) {
+  const float groundY = static_cast<float>(m_h - 40);
+
+  if (pattern == 0) {
+    // 낮은 상자 1개
     const int id = m_world.CreateCircle(18.0f, {x, groundY - 18.0f}, 1.8f, false);
     auto& crate = m_world.Get(id);
     crate.restitution = 0.25f;
     crate.linearDamping = 1.2f;
     crate.groundFriction = 0.85f;
     m_propIds.push_back(id);
-  }
 
-  m_nextSpawnX = 320.0f + static_cast<float>(propCount) * 110.0f;
+  } else if (pattern == 1) {
+    // 높은 상자 1개 (반지름 36, 폭탄으로만 제거)
+    const int id = m_world.CreateCircle(36.0f, {x, groundY - 36.0f}, 1.8f, false);
+    auto& crate = m_world.Get(id);
+    crate.restitution = 0.1f;
+    crate.linearDamping = 1.5f;
+    crate.groundFriction = 0.9f;
+    m_propIds.push_back(id);
+
+  } else if (pattern == 2) {
+    // 낮은 상자 2개 연속
+    for (int i = 0; i < 2; i++) {
+      const int id = m_world.CreateCircle(18.0f, {x + static_cast<float>(i) * 50.0f, groundY - 18.0f}, 1.8f, false);
+      auto& crate = m_world.Get(id);
+      crate.restitution = 0.25f;
+      crate.linearDamping = 1.2f;
+      crate.groundFriction = 0.85f;
+      m_propIds.push_back(id);
+    }
+
+  } else if (pattern == 3) {
+    // 낮은 + 높은 조합
+    const int id1 = m_world.CreateCircle(18.0f, {x, groundY - 18.0f}, 1.8f, false);
+    auto& c1 = m_world.Get(id1);
+    c1.restitution = 0.25f;
+    c1.linearDamping = 1.2f;
+    c1.groundFriction = 0.85f;
+    m_propIds.push_back(id1);
+
+    const int id2 = m_world.CreateCircle(36.0f, {x + 120.0f, groundY - 36.0f}, 1.8f, false);
+    auto& c2 = m_world.Get(id2);
+    c2.restitution = 0.1f;
+    c2.linearDamping = 1.5f;
+    c2.groundFriction = 0.9f;
+    m_propIds.push_back(id2);
+  }
+}
+
+void Game::SpawnFallingObstacle() {
+  const auto& player = m_world.Get(m_playerId);
+  // 플레이어 앞 400~600px 랜덤 위치에서 생성
+  const float spawnX = player.pos.x + 400.0f + static_cast<float>(std::rand() % 200);
+  const int id = m_world.CreateCircle(20.0f, {spawnX, -30.0f}, 1.5f, false);
+  auto& crate = m_world.Get(id);
+  crate.restitution = 0.3f;
+  crate.linearDamping = 0.2f;
+  crate.groundFriction = 0.5f;
+  m_fallingIds.push_back(id);
+}
+
+void Game::UpdateFallingObstacles() {
+  const float camLeft = CameraX() - 200.0f;
+
+  for (int id : m_fallingIds) {
+    auto& crate = m_world.Get(id);
+    if (!crate.active) continue;
+    // 카메라 뒤로 벗어나면 비활성화
+    if (crate.pos.x < camLeft) {
+      crate.active = false;
+    }
+  }
 }
 
 void Game::UpdateSpawn() {
   const float camLeft  = CameraX() - 200.0f;
-  const float camRight = CameraX() + static_cast<float>(m_w) + 300.0f;
+  const float camRight = CameraX() + static_cast<float>(m_w) + 400.0f;
 
-  m_spawnGap = std::max(60.0f, 110.0f - m_elapsed * 0.3f);
+  // 난이도에 따라 간격 조정 (초반 200 → 최소 80)
+  m_spawnGap = std::max(80.0f, 200.0f - m_elapsed * 0.5f);
 
+  // 패턴 선택 (거리에 따라 어려워짐)
+  // 0~300m: 패턴 0만
+  // 300~600m: 패턴 0,1
+  // 600~1000m: 패턴 0,1,2
+  // 1000m~: 전체 패턴
+  int maxPattern = 0;
+  if (m_distance > 300.0f)  maxPattern = 1;
+  if (m_distance > 600.0f)  maxPattern = 2;
+  if (m_distance > 1000.0f) maxPattern = 3;
+
+  // 카메라 뒤 상자 재활용
   for (int id : m_propIds) {
     auto& crate = m_world.Get(id);
-    if (!crate.active) {
-      crate.pos = {m_nextSpawnX, static_cast<float>(m_h - 40) - 18.0f};
-      crate.vel = {0.0f, 0.0f};
-      crate.active = true;
-      m_nextSpawnX += m_spawnGap;
-      continue;
-    }
+    if (!crate.active) continue;
     if (crate.pos.x < camLeft) {
-      crate.pos = {m_nextSpawnX, static_cast<float>(m_h - 40) - 18.0f};
-      crate.vel = {0.0f, 0.0f};
-      m_nextSpawnX += m_spawnGap;
+      crate.active = false;
     }
   }
 
+  // 앞쪽에 새 패턴 생성
   while (m_nextSpawnX < camRight) {
-    const float groundY = static_cast<float>(m_h - 40);
-    const int id = m_world.CreateCircle(18.0f, {m_nextSpawnX, groundY - 18.0f}, 1.8f, false);
-    auto& crate = m_world.Get(id);
-    crate.restitution = 0.25f;
-    crate.linearDamping = 1.2f;
-    crate.groundFriction = 0.85f;
-    m_propIds.push_back(id);
-    m_nextSpawnX += m_spawnGap;
+    const int pattern = std::rand() % (maxPattern + 1);
+    SpawnPattern(m_nextSpawnX, pattern);
+
+    // 패턴 3은 두 개 상자라서 간격 더 벌림
+    if (pattern == 3) {
+      m_nextSpawnX += m_spawnGap + 120.0f;
+    } else if (pattern == 2) {
+      m_nextSpawnX += m_spawnGap + 50.0f;
+    } else {
+      m_nextSpawnX += m_spawnGap;
+    }
   }
 }
 
@@ -130,18 +220,33 @@ void Game::CheckCollision() {
   const auto& p = m_world.Get(m_playerId);
   if (m_hitCooldown > 0.0f) return;
 
+  // 땅 장애물 충돌
   for (int id : m_propIds) {
     const auto& crate = m_world.Get(id);
     if (!crate.active) continue;
     const float dx = p.pos.x - crate.pos.x;
     const float dy = p.pos.y - crate.pos.y;
     const float dist = std::sqrt(dx * dx + dy * dy);
-    const float minDist = p.circle.radius + crate.circle.radius;
-    if (dist < minDist) {
+    if (dist < p.circle.radius + crate.circle.radius) {
       m_hp = std::max(0.0f, m_hp - 0.25f);
       m_hitCooldown = 0.8f;
       if (m_hp <= 0.0f) m_gameOver = true;
-      break;
+      return;
+    }
+  }
+
+  // 떨어지는 장애물 충돌
+  for (int id : m_fallingIds) {
+    const auto& crate = m_world.Get(id);
+    if (!crate.active) continue;
+    const float dx = p.pos.x - crate.pos.x;
+    const float dy = p.pos.y - crate.pos.y;
+    const float dist = std::sqrt(dx * dx + dy * dy);
+    if (dist < p.circle.radius + crate.circle.radius) {
+      m_hp = std::max(0.0f, m_hp - 0.3f);
+      m_hitCooldown = 0.8f;
+      if (m_hp <= 0.0f) m_gameOver = true;
+      return;
     }
   }
 }
@@ -165,9 +270,12 @@ void Game::Restart() {
   m_rewindQueued       = false;
   m_rewind             = RewindBuffer(180);
   m_nextSpawnX         = 0.0f;
-  m_spawnGap           = 110.0f;
+  m_spawnGap           = 200.0f;
   m_hp                 = 1.0f;
   m_hitCooldown        = 0.0f;
+  m_patternIndex       = 0;
+  m_fallingSpawnTimer  = 0.0f;
+  m_fallingSpawnInterval = 8.0f;
 
   auto& p = m_world.Get(m_playerId);
   p.pos = {140.0f, static_cast<float>(m_h - 80)};
@@ -179,6 +287,13 @@ void Game::Restart() {
     crate.active = false;
   }
   m_propIds.clear();
+
+  for (int id : m_fallingIds) {
+    auto& crate = m_world.Get(id);
+    crate.active = false;
+  }
+  m_fallingIds.clear();
+
   SpawnProps();
 }
 
@@ -332,13 +447,25 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   m_elapsed  += dt;
   m_scrollSpeed = 240.0f + m_elapsed * 1.5f;
 
-  // 시간에 따라 체력 감소 (속도 절반)
+  // 시간에 따라 체력 감소
   m_hp = std::max(0.0f, m_hp - dt * 0.02f);
   if (m_hp <= 0.0f) m_gameOver = true;
 
   m_stamina = std::min(3.0f, m_stamina + dt * 0.15f);
 
+  // 떨어지는 장애물 스폰 타이머
+  // 300m 이후부터 등장, 갈수록 자주
+  if (m_distance > 300.0f) {
+    m_fallingSpawnInterval = std::max(3.0f, 8.0f - m_elapsed * 0.1f);
+    m_fallingSpawnTimer += dt;
+    if (m_fallingSpawnTimer >= m_fallingSpawnInterval) {
+      m_fallingSpawnTimer = 0.0f;
+      SpawnFallingObstacle();
+    }
+  }
+
   UpdateSpawn();
+  UpdateFallingObstacles();
   CheckCollision();
   CheckGameOver();
 }
@@ -500,10 +627,25 @@ void Game::Render(SDL_Renderer* r) const {
     }
   }
 
+  // 땅 장애물
   for (int id : m_propIds) {
     const auto& crate = m_world.Get(id);
     if (!crate.active) continue;
-    SDL_SetRenderDrawColor(r, 150, 110, 80, 255);
+    // 높은 상자는 다른 색으로 표시
+    if (crate.circle.radius > 20.0f) {
+      SDL_SetRenderDrawColor(r, 180, 60, 60, 255); // 빨간색 = 폭탄으로 부수기
+    } else {
+      SDL_SetRenderDrawColor(r, 150, 110, 80, 255); // 갈색 = 점프로 넘기
+    }
+    SDL_Rect rc = RectFromCircle({crate.pos.x - camX, crate.pos.y}, crate.circle.radius);
+    SDL_RenderFillRect(r, &rc);
+  }
+
+  // 떨어지는 장애물 (보라색)
+  for (int id : m_fallingIds) {
+    const auto& crate = m_world.Get(id);
+    if (!crate.active) continue;
+    SDL_SetRenderDrawColor(r, 150, 80, 220, 255);
     SDL_Rect rc = RectFromCircle({crate.pos.x - camX, crate.pos.y}, crate.circle.radius);
     SDL_RenderFillRect(r, &rc);
   }
@@ -529,7 +671,7 @@ void Game::Render(SDL_Renderer* r) const {
     SDL_SetRenderDrawColor(r, 110, 255, 140, 255);
     SDL_RenderFillRect(r, &fg);
 
-    // 체력 바 (빨간색)
+    // 체력 바
     SDL_Rect hpBg{x, y + 16, barW, barH};
     SDL_SetRenderDrawColor(r, 40, 40, 48, 255);
     SDL_RenderFillRect(r, &hpBg);

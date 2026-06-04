@@ -32,6 +32,9 @@ public:
 private:
   void SpawnProps();
   void UpdateSpawn();
+  void SpawnPattern(float x, int pattern);  // 패턴별 장애물 배치
+  void SpawnFallingObstacle();              // 위에서 떨어지는 장애물
+  void UpdateFallingObstacles();            // 떨어지는 장애물 업데이트
   void CheckGameOver();
   void CheckCollision();
   void Restart();
@@ -56,7 +59,8 @@ private:
   BombSystem m_bombs{16};
   GravityFieldSystem m_fields;
   PlayerSprite m_playerSprite;
-  std::vector<int> m_propIds;
+  std::vector<int> m_propIds;       // 땅 장애물
+  std::vector<int> m_fallingIds;    // 떨어지는 장애물
 
   float m_scrollSpeed = 240.0f;
   float m_playerScreenX = 140.0f;
@@ -75,15 +79,20 @@ private:
   InputState m_lastInput{};
 
   // B 담당 추가 변수
-  float m_distance  = 0.0f;
-  float m_elapsed   = 0.0f;
-  bool  m_gameOver  = false;
-  float m_hp        = 1.0f;   // 체력 0~1
-  float m_hitCooldown = 0.0f; // 연속 피격 방지
+  float m_distance    = 0.0f;
+  float m_elapsed     = 0.0f;
+  bool  m_gameOver    = false;
+  float m_hp          = 1.0f;
+  float m_hitCooldown = 0.0f;
 
   // 스폰 매니저
-  float m_nextSpawnX = 0.0f;
-  float m_spawnGap   = 110.0f;
+  float m_nextSpawnX      = 0.0f;
+  float m_spawnGap        = 200.0f;  // 초반 간격 넓게
+  int   m_patternIndex    = 0;       // 현재 패턴 인덱스
+
+  // 떨어지는 장애물
+  float m_fallingSpawnTimer   = 0.0f;
+  float m_fallingSpawnInterval = 8.0f;  // 초반엔 8초마다
 };
 
 } // namespace cr
