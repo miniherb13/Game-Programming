@@ -5,6 +5,7 @@
 
 #include <SDL.h>
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace cr {
@@ -42,7 +43,19 @@ Game::Game(int width, int height)
   p.linearDamping = 0.8f;
 
   m_bombs.InitPool(m_world);
-  m_bombs.SetExplosionHandler([this](Vec2 center) { m_fields.SpawnBlackHole(center); });
+  m_bombs.SetExplosionHandler([this](Vec2 center) {
+    m_fields.SpawnBlackHole(center);
+    for (int id : m_propIds) {
+      auto& crate = m_world.Get(id);
+      if (!crate.active) continue;
+      const float dx = crate.pos.x - center.x;
+      const float dy = crate.pos.y - center.y;
+      const float dist = std::sqrt(dx * dx + dy * dy);
+      if (dist < 120.0f) {
+        crate.active = false;
+      }
+    }
+  });
 
   SpawnProps();
 
@@ -85,10 +98,15 @@ void Game::UpdateSpawn() {
 
   m_spawnGap = std::max(60.0f, 110.0f - m_elapsed * 0.3f);
 
-  // 카메라 뒤로 벗어난 상자를 앞쪽으로 재배치 (풀링)
   for (int id : m_propIds) {
     auto& crate = m_world.Get(id);
-    if (!crate.active) continue;
+    if (!crate.active) {
+      crate.pos = {m_nextSpawnX, static_cast<float>(m_h - 40) - 18.0f};
+      crate.vel = {0.0f, 0.0f};
+      crate.active = true;
+      m_nextSpawnX += m_spawnGap;
+      continue;
+    }
     if (crate.pos.x < camLeft) {
       crate.pos = {m_nextSpawnX, static_cast<float>(m_h - 40) - 18.0f};
       crate.vel = {0.0f, 0.0f};
@@ -96,7 +114,6 @@ void Game::UpdateSpawn() {
     }
   }
 
-  // 아직 부족하면 새로 생성
   while (m_nextSpawnX < camRight) {
     const float groundY = static_cast<float>(m_h - 40);
     const int id = m_world.CreateCircle(18.0f, {m_nextSpawnX, groundY - 18.0f}, 1.8f, false);
@@ -106,6 +123,26 @@ void Game::UpdateSpawn() {
     crate.groundFriction = 0.85f;
     m_propIds.push_back(id);
     m_nextSpawnX += m_spawnGap;
+  }
+}
+
+void Game::CheckCollision() {
+  const auto& p = m_world.Get(m_playerId);
+  if (m_hitCooldown > 0.0f) return;
+
+  for (int id : m_propIds) {
+    const auto& crate = m_world.Get(id);
+    if (!crate.active) continue;
+    const float dx = p.pos.x - crate.pos.x;
+    const float dy = p.pos.y - crate.pos.y;
+    const float dist = std::sqrt(dx * dx + dy * dy);
+    const float minDist = p.circle.radius + crate.circle.radius;
+    if (dist < minDist) {
+      m_hp = std::max(0.0f, m_hp - 0.25f);
+      m_hitCooldown = 0.8f;
+      if (m_hp <= 0.0f) m_gameOver = true;
+      break;
+    }
   }
 }
 
@@ -129,6 +166,8 @@ void Game::Restart() {
   m_rewind             = RewindBuffer(180);
   m_nextSpawnX         = 0.0f;
   m_spawnGap           = 110.0f;
+  m_hp                 = 1.0f;
+  m_hitCooldown        = 0.0f;
 
   auto& p = m_world.Get(m_playerId);
   p.pos = {140.0f, static_cast<float>(m_h - 80)};
@@ -207,6 +246,7 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   }
 
   m_rewindCooldownLeft = std::max(0.0f, m_rewindCooldownLeft - dt);
+  m_hitCooldown = std::max(0.0f, m_hitCooldown - dt);
 
   const bool rewindFrame = m_rewindQueued;
   if (m_rewindQueued) {
@@ -234,6 +274,7 @@ void Game::FixedUpdate(float dt, const InputState& input) {
         m_stamina = std::max(0.0f, staminaBeforeRewind - kRewindStaminaCost);
         m_rewindCooldownLeft = kRewindStaminaCost;
         m_rewindPoseLeft = kRewindPoseSeconds;
+        m_hp = std::min(1.0f, m_hp + 0.1f);
         return;
       }
     }
@@ -291,9 +332,14 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   m_elapsed  += dt;
   m_scrollSpeed = 240.0f + m_elapsed * 1.5f;
 
+  // 시간에 따라 체력 감소 (속도 절반)
+  m_hp = std::max(0.0f, m_hp - dt * 0.02f);
+  if (m_hp <= 0.0f) m_gameOver = true;
+
   m_stamina = std::min(3.0f, m_stamina + dt * 0.15f);
 
   UpdateSpawn();
+  CheckCollision();
   CheckGameOver();
 }
 
@@ -418,9 +464,9 @@ void Game::Render(SDL_Renderer* r) const {
   };
 
   if (gameplayHud) {
-    drawKey(16, 34, m_lastInput.jumpHeld, m_lastInput.jumpPressed, SDL_Color{90, 220, 255, 255});   // C
-    drawKey(42, 34, m_lastInput.throwHeld, m_lastInput.throwPressed, SDL_Color{255, 220, 80, 255}); // X
-    drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, SDL_Color{180, 80, 255, 255}); // Z
+    drawKey(16, 34, m_lastInput.jumpHeld, m_lastInput.jumpPressed, SDL_Color{90, 220, 255, 255});
+    drawKey(42, 34, m_lastInput.throwHeld, m_lastInput.throwPressed, SDL_Color{255, 220, 80, 255});
+    drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, SDL_Color{180, 80, 255, 255});
   }
 
   // Ground
@@ -482,6 +528,17 @@ void Game::Render(SDL_Renderer* r) const {
     SDL_Rect fg{x, y, fill, barH};
     SDL_SetRenderDrawColor(r, 110, 255, 140, 255);
     SDL_RenderFillRect(r, &fg);
+
+    // 체력 바 (빨간색)
+    SDL_Rect hpBg{x, y + 16, barW, barH};
+    SDL_SetRenderDrawColor(r, 40, 40, 48, 255);
+    SDL_RenderFillRect(r, &hpBg);
+    const int hpFill = static_cast<int>(m_hp * barW);
+    SDL_Rect hpFg{x, y + 16, hpFill, barH};
+    const Uint8 rr = static_cast<Uint8>(255 * (1.0f - m_hp));
+    const Uint8 gg = static_cast<Uint8>(255 * m_hp);
+    SDL_SetRenderDrawColor(r, rr, gg, 60, 255);
+    SDL_RenderFillRect(r, &hpFg);
 
     // 거리 바
     SDL_Rect distBg{m_w - 260, 16, 244, 12};

@@ -31,8 +31,9 @@ public:
 
 private:
   void SpawnProps();
-  void UpdateSpawn();    // 동적 스폰 업데이트
+  void UpdateSpawn();
   void CheckGameOver();
+  void CheckCollision();
   void Restart();
   float CameraX() const;
   Vec2 MouseWorldPos(const InputState& input) const;
@@ -74,13 +75,15 @@ private:
   InputState m_lastInput{};
 
   // B 담당 추가 변수
-  float m_distance    = 0.0f;
-  float m_elapsed     = 0.0f;
-  bool  m_gameOver    = false;
+  float m_distance  = 0.0f;
+  float m_elapsed   = 0.0f;
+  bool  m_gameOver  = false;
+  float m_hp        = 1.0f;   // 체력 0~1
+  float m_hitCooldown = 0.0f; // 연속 피격 방지
 
   // 스폰 매니저
-  float m_nextSpawnX  = 0.0f;   // 다음 상자 생성할 X 위치
-  float m_spawnGap    = 110.0f; // 상자 간격 (난이도에 따라 줄어듦)
+  float m_nextSpawnX = 0.0f;
+  float m_spawnGap   = 110.0f;
 };
 
 } // namespace cr
