@@ -76,6 +76,29 @@ void Game::SpawnProps() {
   }
 }
 
+void Game::CheckGameOver() {
+  const auto& p = m_world.Get(m_playerId);
+  if (p.pos.y > static_cast<float>(m_h + 100)) {
+    m_gameOver = true;
+  }
+}
+
+void Game::Restart() {
+  m_gameOver    = false;
+  m_distance    = 0.0f;
+  m_elapsed     = 0.0f;
+  m_scrollSpeed = 240.0f;
+  m_stamina     = 3.0f;
+  m_jumpBuffer  = 0.0f;
+  m_coyote      = 0.0f;
+  m_rewind      = RewindBuffer(180);
+
+  auto& p = m_world.Get(m_playerId);
+  p.pos = {140.0f, static_cast<float>(m_h - 80)};
+  p.vel = {0.0f, 0.0f};
+  p.onGround = false;
+}
+
 Vec2 Game::MouseWorldPos(const InputState& input) const {
   return {input.mousePos.x + CameraX(), input.mousePos.y};
 }
@@ -133,6 +156,12 @@ void Game::HandleInput(float dt, const InputState& input) {
 void Game::FixedUpdate(float dt, const InputState& input) {
   if (!m_started || m_paused) return;
 
+  // 게임오버 상태면 C키로 재시작
+  if (m_gameOver) {
+    if (input.jumpPressed) Restart();
+    return;
+  }
+
   if (input.rewindPressed && m_stamina >= 3.0f) {
     bool any = false;
     const std::size_t frames = m_rewind.Capacity();
@@ -158,7 +187,6 @@ void Game::FixedUpdate(float dt, const InputState& input) {
 
   const bool rewindFrame = input.rewindPressed;
 
-  // Keep jump intent for longer (runner-friendly).
   if (!rewindFrame) {
     if (input.jumpPressed) m_jumpBuffer = 0.50f;
     if (input.jumpHeld) m_jumpBuffer = std::max(m_jumpBuffer, 0.10f);
@@ -191,7 +219,6 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   m_fields.FixedUpdate(dt);
   m_bombs.FixedUpdate(dt, m_world, m_playerId);
 
-  // coyote time (allow jump slightly after leaving ground)
   if (p.onGround) {
     m_coyote = 0.10f;
     m_runAnimPhase += dt;
@@ -208,13 +235,20 @@ void Game::FixedUpdate(float dt, const InputState& input) {
             " posY=" + std::to_string(p.pos.y) +
             " velY=" + std::to_string(p.vel.y));
     p.vel.y = -520.0f;
-    p.pos.y -= 1.0f; // ensure we visually leave ground this frame
+    p.pos.y -= 1.0f;
     p.onGround = false;
     m_jumpBuffer = 0.0f;
     m_coyote = 0.0f;
   }
 
+  // 거리 + 난이도
+  m_distance += m_scrollSpeed * dt;
+  m_elapsed  += dt;
+  m_scrollSpeed = 240.0f + m_elapsed * 1.5f;
+
   m_stamina = std::min(3.0f, m_stamina + dt * 0.15f);
+
+  CheckGameOver();
 }
 
 void Game::DrawTitleOverlay(SDL_Renderer* r) const {
@@ -292,12 +326,34 @@ void Game::DrawPauseOverlay(SDL_Renderer* r) const {
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
+void Game::DrawGameOverOverlay(SDL_Renderer* r) const {
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  SDL_SetRenderDrawColor(r, 0, 0, 0, 180);
+  SDL_Rect dim{0, 0, m_w, m_h};
+  SDL_RenderFillRect(r, &dim);
+
+  const SDL_Rect panel{m_w / 2 - 220, m_h / 2 - 120, 440, 200};
+  SDL_SetRenderDrawColor(r, 24, 24, 30, 245);
+  SDL_RenderFillRect(r, &panel);
+  SDL_SetRenderDrawColor(r, 180, 60, 60, 255);
+  SDL_RenderDrawRect(r, &panel);
+
+  const SDL_Color title{255, 80, 80, 255};
+  const SDL_Color hint{220, 220, 230, 255};
+  const int line = m_ui.LineHeight();
+  int y = panel.y + 28;
+
+  m_ui.DrawCentered(r, m_w / 2, y, "GAME OVER", title);
+  y += line + 20;
+  m_ui.DrawCentered(r, m_w / 2, y, "C : 재시작", hint);
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
 void Game::Render(SDL_Renderer* r) const {
   const float camX = CameraX();
   const bool gameplayHud = m_started && !m_paused;
 
-  // Input debug indicators (C / X / Z)
-  // Bright = Held, dim = not held. Border flash = pressed this frame.
   auto drawKey = [&](int x, int y, bool held, bool pressed, SDL_Color base) {
     SDL_Rect bg{x, y, 22, 22};
     SDL_SetRenderDrawColor(r, 18, 18, 22, 255);
@@ -316,10 +372,10 @@ void Game::Render(SDL_Renderer* r) const {
   };
 
   if (gameplayHud) {
-    drawKey(16, 34, m_lastInput.jumpHeld, m_lastInput.jumpPressed, SDL_Color{90, 220, 255, 255});   // C
-    drawKey(42, 34, m_lastInput.throwHeld, m_lastInput.throwPressed, SDL_Color{255, 220, 80, 255}); // X
-    drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, SDL_Color{180, 80, 255, 255}); // Z
-    drawKey(94, 34, m_lastInput.fieldHeld, m_lastInput.fieldPressed, SDL_Color{150, 90, 255, 255});   // V
+    drawKey(16, 34, m_lastInput.jumpHeld, m_lastInput.jumpPressed, SDL_Color{90, 220, 255, 255});
+    drawKey(42, 34, m_lastInput.throwHeld, m_lastInput.throwPressed, SDL_Color{255, 220, 80, 255});
+    drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, SDL_Color{180, 80, 255, 255});
+    drawKey(94, 34, m_lastInput.fieldHeld, m_lastInput.fieldPressed, SDL_Color{150, 90, 255, 255});
   }
 
   // Ground
@@ -327,7 +383,7 @@ void Game::Render(SDL_Renderer* r) const {
   SDL_Rect ground{0, m_h - 40, m_w, 40};
   SDL_RenderFillRect(r, &ground);
 
-  // Player sprite (assets/player/spritesheet.png)
+  // Player sprite
   {
     const auto& p = m_world.Get(m_playerId);
     const float screenX = p.pos.x - camX;
@@ -374,6 +430,7 @@ void Game::Render(SDL_Renderer* r) const {
   }
 
   if (gameplayHud) {
+    // 스태미나 바
     const int barW = 240;
     const int barH = 12;
     const int x = 16;
@@ -386,10 +443,21 @@ void Game::Render(SDL_Renderer* r) const {
     SDL_Rect fg{x, y, fill, barH};
     SDL_SetRenderDrawColor(r, 110, 255, 140, 255);
     SDL_RenderFillRect(r, &fg);
+
+    // 거리 바
+    SDL_Rect distBg{m_w - 260, 16, 244, 12};
+    SDL_SetRenderDrawColor(r, 40, 40, 48, 255);
+    SDL_RenderFillRect(r, &distBg);
+    const int distFill = static_cast<int>(m_distance / 10.0f) % 244;
+    SDL_Rect distFg{m_w - 260, 16, distFill, 12};
+    SDL_SetRenderDrawColor(r, 255, 180, 60, 255);
+    SDL_RenderFillRect(r, &distFg);
   }
 
   if (!m_started) {
     DrawTitleOverlay(r);
+  } else if (m_gameOver) {
+    DrawGameOverOverlay(r);
   } else if (m_paused) {
     DrawPauseOverlay(r);
   }

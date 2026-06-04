@@ -31,10 +31,13 @@ public:
 
 private:
   void SpawnProps();
+  void CheckGameOver();
+  void Restart();
   float CameraX() const;
   Vec2 MouseWorldPos(const InputState& input) const;
   void DrawTitleOverlay(SDL_Renderer* r) const;
   void DrawPauseOverlay(SDL_Renderer* r) const;
+  void DrawGameOverOverlay(SDL_Renderer* r) const;
 
   int m_w = 0;
   int m_h = 0;
@@ -63,9 +66,14 @@ private:
 
   RewindBuffer m_rewind;
   GameSnapshot m_snapshotScratch{};
-  float m_stamina = 3.0f; // seconds of rewind budget
+  float m_stamina = 3.0f;
 
   InputState m_lastInput{};
+
+  // B 담당 추가 변수
+  float m_distance = 0.0f;
+  float m_elapsed  = 0.0f;
+  bool  m_gameOver = false;
 };
 
 } // namespace cr
