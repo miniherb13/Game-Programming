@@ -17,6 +17,19 @@ SDL_Rect RectFromCircleScreen(Vec2 screenPos, float r) {
   return out;
 }
 
+void DrawCircleFilled(SDL_Renderer* r, Vec2 screenCenter, float radius) {
+  const int cx = static_cast<int>(screenCenter.x);
+  const int cy = static_cast<int>(screenCenter.y);
+  const int ir = static_cast<int>(radius);
+  for (int y = -ir; y <= ir; y++) {
+    const float wy = static_cast<float>(y);
+    const float halfW = std::sqrt(std::max(0.0f, radius * radius - wy * wy));
+    const int x0 = cx - static_cast<int>(halfW);
+    const int x1 = cx + static_cast<int>(halfW);
+    SDL_RenderDrawLine(r, x0, cy + y, x1, cy + y);
+  }
+}
+
 void DrawCircleOutline(SDL_Renderer* r, Vec2 screenCenter, float radius) {
   constexpr int segments = 48;
   int px = static_cast<int>(screenCenter.x + radius);
@@ -177,8 +190,7 @@ void GravityFieldSystem::Render(SDL_Renderer* r, float cameraX) const {
     const SDL_Color fill = attract ? SDL_Color{90, 40, 120, 45} : SDL_Color{40, 100, 140, 45};
 
     SDL_SetRenderDrawColor(r, fill.r, fill.g, fill.b, fill.a);
-    SDL_Rect area = RectFromCircleScreen(screen, field.radius * pulse);
-    SDL_RenderFillRect(r, &area);
+    DrawCircleFilled(r, screen, field.radius * pulse);
 
     SDL_SetRenderDrawColor(r, ring.r, ring.g, ring.b, ring.a);
     DrawCircleOutline(r, screen, field.radius * pulse);

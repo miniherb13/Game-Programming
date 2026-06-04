@@ -9,6 +9,13 @@
 
 namespace cr {
 
+namespace {
+
+constexpr float kPlayerDisplayHeight = 82.0f;
+constexpr float kRewindPoseSeconds = 1.0f;
+
+} // namespace
+
 static SDL_Rect RectFromCircle(const Vec2& p, float r) {
   SDL_Rect out{};
   out.x = static_cast<int>(p.x - r);
@@ -38,6 +45,9 @@ Game::Game(int width, int height)
 
   SpawnProps();
 
+  if (!m_playerSprite.Load()) {
+    Log(LogLevel::Error, "Failed to load assets/player/*.png");
+  }
 }
 
 void Game::SpawnProps() {
@@ -60,7 +70,7 @@ Vec2 Game::MouseWorldPos(const InputState& input) const {
   return {input.mousePos.x + CameraX(), input.mousePos.y};
 }
 
-void Game::HandleInput(const InputState& input) {
+void Game::HandleInput(float dt, const InputState& input) {
   if (input.quit) {
     m_quit = true;
     return;
@@ -78,26 +88,30 @@ void Game::HandleInput(const InputState& input) {
     m_paused = false;
   }
 
+  if (!m_paused) {
+    auto& p = m_world.Get(m_playerId);
+    if (input.rewindPressed) {
+      m_bombs.CancelCharge();
+      m_throwReleasePoseLeft = 0.0f;
+      m_jumpBuffer = 0.0f;
+      if (m_stamina >= 3.0f) {
+        m_rewindPoseLeft = kRewindPoseSeconds;
+      }
+    } else {
+      if (m_bombs.IsCharging() && input.throwReleased) {
+        m_throwReleasePoseLeft = 0.35f;
+      }
+      m_bombs.UpdateThrow(dt, input, MouseWorldPos(input), m_world, p);
+    }
+    m_throwReleasePoseLeft = std::max(0.0f, m_throwReleasePoseLeft - dt);
+    m_rewindPoseLeft = std::max(0.0f, m_rewindPoseLeft - dt);
+  }
+
   m_lastInput = input;
 }
 
 void Game::FixedUpdate(float dt, const InputState& input) {
   if (m_paused) return;
-
-  // Keep jump intent for longer (runner-friendly).
-  if (input.jumpPressed) m_jumpBuffer = 0.50f;
-  if (input.jumpHeld) m_jumpBuffer = std::max(m_jumpBuffer, 0.10f);
-  m_jumpBuffer = std::max(0.0f, m_jumpBuffer - dt);
-
-  m_snapshotScratch.Capture(m_world,
-                            m_playerId,
-                            m_jumpBuffer,
-                            m_coyote,
-                            m_stamina,
-                            m_bombs,
-                            m_fields,
-                            m_propIds);
-  m_rewind.PushFrame(m_snapshotScratch);
 
   if (input.rewindPressed && m_stamina >= 3.0f) {
     bool any = false;
@@ -117,17 +131,36 @@ void Game::FixedUpdate(float dt, const InputState& input) {
                               m_fields,
                               m_propIds);
       m_stamina = std::max(0.0f, m_stamina - 3.0f);
+      m_rewindPoseLeft = kRewindPoseSeconds;
+      return;
     }
   }
+
+  const bool rewindFrame = input.rewindPressed;
+
+  // Keep jump intent for longer (runner-friendly).
+  if (!rewindFrame) {
+    if (input.jumpPressed) m_jumpBuffer = 0.50f;
+    if (input.jumpHeld) m_jumpBuffer = std::max(m_jumpBuffer, 0.10f);
+  }
+  m_jumpBuffer = std::max(0.0f, m_jumpBuffer - dt);
+
+  m_snapshotScratch.Capture(m_world,
+                            m_playerId,
+                            m_jumpBuffer,
+                            m_coyote,
+                            m_stamina,
+                            m_bombs,
+                            m_fields,
+                            m_propIds);
+  m_rewind.PushFrame(m_snapshotScratch);
 
   auto& p = m_world.Get(m_playerId);
   p.vel.x = m_scrollSpeed;
 
-  m_bombs.TryThrow(input, MouseWorldPos(input), m_world, p);
-
   if (input.debugPressed) m_fields.ToggleDebug();
 
-  if (input.fieldPressed && !m_bombs.IsAiming(input)) {
+  if (!rewindFrame && input.fieldPressed && !m_bombs.IsAiming(input)) {
     const FieldMode mode = input.shiftHeld ? FieldMode::Repel : FieldMode::Attract;
     m_fields.TrySpawnManual(MouseWorldPos(input), mode);
   }
@@ -141,12 +174,13 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   // coyote time (allow jump slightly after leaving ground)
   if (p.onGround) {
     m_coyote = 0.10f;
+    m_runAnimPhase += dt;
   } else {
     m_coyote = std::max(0.0f, m_coyote - dt);
   }
 
   // Apply jump AFTER physics so "landing frame" isn't delayed.
-  if (m_jumpBuffer > 0.0f && (p.onGround || m_coyote > 0.0f)) {
+  if (!rewindFrame && m_jumpBuffer > 0.0f && (p.onGround || m_coyote > 0.0f)) {
     Log(LogLevel::Info,
         std::string("JUMP! onGround=") + (p.onGround ? "1" : "0") +
             " coyote=" + std::to_string(m_coyote) +
@@ -195,12 +229,30 @@ void Game::Render(SDL_Renderer* r) const {
   SDL_Rect ground{0, m_h - 40, m_w, 40};
   SDL_RenderFillRect(r, &ground);
 
-  // Player
+  // Player sprite (assets/player/spritesheet.png)
   {
-    const auto& p = m_world.Bodies().at(static_cast<std::size_t>(m_playerId));
-    SDL_SetRenderDrawColor(r, 60, 200, 255, 255);
-    SDL_Rect rc = RectFromCircle({p.pos.x - camX, p.pos.y}, p.circle.radius);
-    SDL_RenderFillRect(r, &rc);
+    const auto& p = m_world.Get(m_playerId);
+    const float screenX = p.pos.x - camX;
+    const bool rewindPose = m_rewindPoseLeft > 0.0f;
+    const float footY =
+        rewindPose ? static_cast<float>(m_h) * 0.5f + kPlayerDisplayHeight * 0.5f : p.pos.y + p.circle.radius;
+    m_playerSprite.EnsureUploaded(r);
+    if (m_playerSprite.IsReady()) {
+      m_playerSprite.Draw(r,
+                          screenX,
+                          footY,
+                          p.onGround,
+                          m_paused,
+                          rewindPose,
+                          m_bombs.IsCharging(),
+                          m_throwReleasePoseLeft > 0.0f,
+                          m_bombs.Charge01(),
+                          m_runAnimPhase);
+    } else {
+      SDL_SetRenderDrawColor(r, 255, 80, 80, 255);
+      SDL_Rect rc = RectFromCircle({screenX, p.pos.y}, p.circle.radius);
+      SDL_RenderFillRect(r, &rc);
+    }
   }
 
   for (int id : m_propIds) {
@@ -213,7 +265,8 @@ void Game::Render(SDL_Renderer* r) const {
 
   m_fields.Render(r, camX);
   const float groundY = static_cast<float>(m_h - 40);
-  m_bombs.Render(r, camX, groundY, m_world, m_world.Get(m_playerId), MouseWorldPos(m_lastInput));
+  const bool showAimGuide = m_rewindPoseLeft <= 0.0f && !m_lastInput.rewindHeld;
+  m_bombs.Render(r, camX, groundY, m_world, m_world.Get(m_playerId), MouseWorldPos(m_lastInput), showAimGuide);
 
   if (m_fields.DebugEnabled()) {
     SDL_SetRenderDrawColor(r, 255, 255, 120, 255);

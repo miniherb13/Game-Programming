@@ -52,7 +52,7 @@ int App::Run() {
 
     input.BeginFrame();
     input.Pump();
-    game.HandleInput(input.State());
+    game.HandleInput(static_cast<float>(dt), input.State());
 
     if (!game.IsPaused()) {
       acc += dt;

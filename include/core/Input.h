@@ -17,6 +17,7 @@ struct InputState {
 
   bool jumpHeld = false;
   bool throwHeld = false;
+  bool throwReleased = false;
   bool rewindHeld = false;
   bool fieldHeld = false;
   bool shiftHeld = false;

@@ -19,6 +19,35 @@ SDL_Rect RectFromCircleScreen(Vec2 screenPos, float r) {
   return out;
 }
 
+void DrawCircleFilled(SDL_Renderer* r, Vec2 screenCenter, float radius) {
+  const int cx = static_cast<int>(screenCenter.x);
+  const int cy = static_cast<int>(screenCenter.y);
+  const int ir = static_cast<int>(radius);
+  for (int y = -ir; y <= ir; y++) {
+    const float wy = static_cast<float>(y);
+    const float halfW = std::sqrt(std::max(0.0f, radius * radius - wy * wy));
+    SDL_RenderDrawLine(r,
+                       cx - static_cast<int>(halfW),
+                       cy + y,
+                       cx + static_cast<int>(halfW),
+                       cy + y);
+  }
+}
+
+void DrawCircleOutline(SDL_Renderer* r, Vec2 screenCenter, float radius) {
+  constexpr int segments = 48;
+  int px = static_cast<int>(screenCenter.x + radius);
+  int py = static_cast<int>(screenCenter.y);
+  for (int i = 1; i <= segments; i++) {
+    const float t = static_cast<float>(i) / static_cast<float>(segments) * 6.2831853f;
+    const int nx = static_cast<int>(screenCenter.x + std::cos(t) * radius);
+    const int ny = static_cast<int>(screenCenter.y + std::sin(t) * radius);
+    SDL_RenderDrawLine(r, px, py, nx, ny);
+    px = nx;
+    py = ny;
+  }
+}
+
 } // namespace
 
 BombSlotSnapshot BombSlotSnapshot::Save(const BombSlot& slot, const Body& body) {
@@ -88,20 +117,24 @@ Vec2 BombSystem::LaunchPosition(const Body& player) const {
   return player.pos + Vec2{BombTuning::spawnOffsetX, BombTuning::spawnOffsetY};
 }
 
-Vec2 BombSystem::ComputeThrowVelocity(const Body& player, Vec2 mouseWorld) const {
+float BombSystem::Charge01() const {
+  return std::clamp(m_chargeTime / BombTuning::maxChargeTime, 0.0f, 1.0f);
+}
+
+void BombSystem::CancelCharge() {
+  m_charging = false;
+  m_chargeTime = 0.0f;
+}
+
+Vec2 BombSystem::ComputeThrowVelocity(const Body& player, Vec2 mouseWorld, float charge01) const {
   const Vec2 launch = LaunchPosition(player);
   Vec2 aim = mouseWorld - launch;
 
   if (aim.x < BombTuning::minAimForwardX) aim.x = BombTuning::minAimForwardX;
+  if (aim.LenSq() < 64.0f) aim = {80.0f, -50.0f};
 
-  const float dist = aim.Len();
-  if (dist < BombTuning::minAimDistance) {
-    return Normalize(aim) * BombTuning::minThrowSpeed;
-  }
-
-  const float speed = std::clamp(dist * BombTuning::powerPerDistance,
-                                 BombTuning::minThrowSpeed,
-                                 BombTuning::maxThrowSpeed);
+  const float t = std::clamp(charge01, 0.0f, 1.0f);
+  const float speed = BombTuning::minThrowSpeed + (BombTuning::maxThrowSpeed - BombTuning::minThrowSpeed) * t;
   return Normalize(aim) * speed;
 }
 
@@ -138,7 +171,7 @@ void BombSystem::DrawDashedTrajectory(SDL_Renderer* r,
                                       const std::vector<Vec2>& points) const {
   if (points.size() < 2) return;
 
-  SDL_SetRenderDrawColor(r, 255, 220, 90, 210);
+  SDL_SetRenderDrawColor(r, 255, 255, 255, 210);
 
   float dashLeft = 0.0f;
   bool drawing = true;
@@ -179,7 +212,7 @@ void BombSystem::DrawDashedTrajectory(SDL_Renderer* r,
   }
 
   const Vec2 launchScreen{points.front().x - cameraX, points.front().y};
-  SDL_SetRenderDrawColor(r, 255, 200, 60, 255);
+  SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
   SDL_Rect dot{static_cast<int>(launchScreen.x) - 3, static_cast<int>(launchScreen.y) - 3, 6, 6};
   SDL_RenderFillRect(r, &dot);
 }
@@ -220,10 +253,8 @@ void BombSystem::ArmSlot(int slotIndex, PhysicsWorld& world, const Body& player,
   slot.prevVelY = 0.0f;
 }
 
-void BombSystem::TryThrow(const InputState& input, Vec2 mouseWorld, PhysicsWorld& world, const Body& player) {
-  if (!input.throwPressed) return;
-
-  const Vec2 velocity = ComputeThrowVelocity(player, mouseWorld);
+void BombSystem::Fire(const Body& player, Vec2 mouseWorld, float charge01, PhysicsWorld& world) {
+  const Vec2 velocity = ComputeThrowVelocity(player, mouseWorld, charge01);
   if (velocity.LenSq() < 1.0f) return;
 
   const int slot = AllocateSlot();
@@ -235,6 +266,26 @@ void BombSystem::TryThrow(const InputState& input, Vec2 mouseWorld, PhysicsWorld
   }
 
   ArmSlot(slot, world, player, velocity);
+}
+
+void BombSystem::UpdateThrow(float dt,
+                             const InputState& input,
+                             Vec2 mouseWorld,
+                             PhysicsWorld& world,
+                             const Body& player) {
+  if (input.throwHeld) {
+    m_charging = true;
+    m_chargeTime = std::min(BombTuning::maxChargeTime, m_chargeTime + dt);
+    return;
+  }
+
+  if (m_charging && input.throwReleased) {
+    const float charge01 = std::max(Charge01(), BombTuning::minCharge01OnRelease);
+    Fire(player, mouseWorld, charge01, world);
+  }
+
+  m_charging = false;
+  m_chargeTime = 0.0f;
 }
 
 void BombSystem::ApplyExplosionImpulse(PhysicsWorld& world,
@@ -321,21 +372,29 @@ void BombSystem::Render(SDL_Renderer* r,
                         float groundY,
                         const PhysicsWorld& world,
                         const Body& player,
-                        Vec2 mouseWorld) const {
-  const Vec2 velocity = ComputeThrowVelocity(player, mouseWorld);
-  if (velocity.LenSq() > 1.0f) {
-    const Vec2 launch = LaunchPosition(player);
-    std::vector<Vec2> arc;
-    SampleTrajectory(launch, velocity, world.Gravity().y, groundY, arc);
-    DrawDashedTrajectory(r, cameraX, arc);
+                        Vec2 mouseWorld,
+                        bool showAimGuide) const {
+  if (showAimGuide) {
+    const float charge01 = IsCharging() ? Charge01() : 0.0f;
+    const Vec2 velocity = ComputeThrowVelocity(player, mouseWorld, charge01);
+    if (velocity.LenSq() > 1.0f) {
+      const Vec2 launch = LaunchPosition(player);
+      std::vector<Vec2> arc;
+      SampleTrajectory(launch, velocity, world.Gravity().y, groundY, arc);
+      DrawDashedTrajectory(r, cameraX, arc);
 
-    const Vec2 mouseScreen{mouseWorld.x - cameraX, mouseWorld.y};
-    SDL_SetRenderDrawColor(r, 255, 255, 255, 140);
-    SDL_RenderDrawLine(r,
-                       static_cast<int>(launch.x - cameraX),
-                       static_cast<int>(launch.y),
-                       static_cast<int>(mouseScreen.x),
-                       static_cast<int>(mouseScreen.y));
+      if (IsCharging()) {
+        const Vec2 launchScreen{launch.x - cameraX, launch.y};
+        const int barW = 56;
+        const int fill = static_cast<int>(barW * charge01);
+        SDL_Rect bg{static_cast<int>(launchScreen.x) - 8, static_cast<int>(launchScreen.y) - 28, barW, 8};
+        SDL_SetRenderDrawColor(r, 60, 60, 70, 255);
+        SDL_RenderFillRect(r, &bg);
+        SDL_Rect fg{bg.x, bg.y, fill, bg.h};
+        SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+        SDL_RenderFillRect(r, &fg);
+      }
+    }
   }
 
   for (const auto& slot : m_slots) {
@@ -343,14 +402,17 @@ void BombSystem::Render(SDL_Renderer* r,
       const auto& b = world.Bodies().at(static_cast<std::size_t>(slot.bodyId));
       if (!b.active) continue;
 
-      SDL_SetRenderDrawColor(r, 255, 220, 80, 255);
-      SDL_Rect rc = RectFromCircleScreen({b.pos.x - cameraX, b.pos.y}, b.circle.radius);
-      SDL_RenderFillRect(r, &rc);
+      const Vec2 bombScreen{b.pos.x - cameraX, b.pos.y};
+      SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+      DrawCircleOutline(r, bombScreen, b.circle.radius);
 
       const float fuseT = slot.fuseLeft / BombTuning::fuseSeconds;
-      SDL_SetRenderDrawColor(r, 255, 120, 60, 255);
+      SDL_SetRenderDrawColor(r, 180, 180, 180, 255);
       const int indicator = static_cast<int>(6.0f + (1.0f - fuseT) * 8.0f);
-      SDL_Rect pulse{rc.x + rc.w / 2 - indicator / 2, rc.y - 6, indicator, 4};
+      SDL_Rect pulse{static_cast<int>(bombScreen.x) - indicator / 2,
+                     static_cast<int>(bombScreen.y - b.circle.radius) - 6,
+                     indicator,
+                     4};
       SDL_RenderFillRect(r, &pulse);
       continue;
     }
@@ -358,10 +420,11 @@ void BombSystem::Render(SDL_Renderer* r,
     if (slot.phase == BombPhase::Exploded && slot.visualLeft > 0.0f) {
       const float t = 1.0f - (slot.visualLeft / BombTuning::explosionVisualSeconds);
       const float radius = BombTuning::explosionRadius * (0.35f + 0.65f * t);
-      SDL_SetRenderDrawColor(r, 255, 140, 50, static_cast<Uint8>(220 * (1.0f - t)));
-      SDL_Rect rc = RectFromCircleScreen({slot.explosionCenter.x - cameraX, slot.explosionCenter.y}, radius);
-      SDL_RenderDrawRect(r, &rc);
-      SDL_RenderDrawRect(r, &rc);
+      const Vec2 center{slot.explosionCenter.x - cameraX, slot.explosionCenter.y};
+      SDL_SetRenderDrawColor(r, 150, 70, 255, static_cast<Uint8>(180 * (1.0f - t)));
+      DrawCircleFilled(r, center, radius);
+      SDL_SetRenderDrawColor(r, 120, 50, 220, static_cast<Uint8>(220 * (1.0f - t)));
+      DrawCircleOutline(r, center, radius);
     }
   }
 }

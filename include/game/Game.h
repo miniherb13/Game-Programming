@@ -3,6 +3,7 @@
 #include "core/Input.h"
 #include "game/Bomb.h"
 #include "game/GravityField.h"
+#include "game/PlayerSprite.h"
 #include "physics/PhysicsWorld.h"
 #include "rewind/RewindBuffer.h"
 
@@ -16,7 +17,7 @@ class Game {
 public:
   Game(int width, int height);
 
-  void HandleInput(const InputState& input);
+  void HandleInput(float dt, const InputState& input);
   void FixedUpdate(float dt, const InputState& input);
   void Render(SDL_Renderer* r) const;
 
@@ -38,12 +39,16 @@ private:
   int m_playerId = -1;
   BombSystem m_bombs{16};
   GravityFieldSystem m_fields;
+  PlayerSprite m_playerSprite;
   std::vector<int> m_propIds;
 
   float m_scrollSpeed = 240.0f;
   float m_playerScreenX = 140.0f;
   float m_jumpBuffer = 0.0f;
   float m_coyote = 0.0f;
+  float m_runAnimPhase = 0.0f;
+  float m_throwReleasePoseLeft = 0.0f;
+  float m_rewindPoseLeft = 0.0f;
 
   RewindBuffer m_rewind;
   GameSnapshot m_snapshotScratch{};

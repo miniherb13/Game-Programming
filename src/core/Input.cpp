@@ -16,6 +16,7 @@ void Input::BeginFrame() {
   m_state.debugPressed = false;
   m_state.pausePressed = false;
   m_state.resumePressed = false;
+  m_state.throwReleased = false;
   m_state.mouseReleased = false;
 }
 
@@ -44,6 +45,7 @@ void Input::Pump() {
         }
         break;
       case SDL_KEYUP:
+        if (e.key.keysym.scancode == SDL_SCANCODE_X) m_state.throwReleased = true;
         if (e.key.keysym.scancode == SDL_SCANCODE_C ||
             e.key.keysym.scancode == SDL_SCANCODE_X ||
             e.key.keysym.scancode == SDL_SCANCODE_Z) {

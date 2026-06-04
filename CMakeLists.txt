@@ -35,11 +35,19 @@ add_executable(chrono_rush_demo
   src/rewind/Snapshot.cpp
   src/game/Bomb.cpp
   src/game/GravityField.cpp
+  src/game/PlayerSprite.cpp
   src/game/Game.cpp
 )
 
 target_include_directories(chrono_rush_demo PRIVATE
   include
+  third_party
+)
+
+add_custom_command(TARGET chrono_rush_demo POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_SOURCE_DIR}/assets
+          $<TARGET_FILE_DIR:chrono_rush_demo>/assets
 )
 
 if(TARGET SDL2::SDL2-static)
