@@ -73,3 +73,5 @@ cmake --build build
 - **스냅샷 공통 포맷**: `BodySnapshot` — `active, pos, vel, onGround` + 객체별 추가 필드
 - **객체 ID 정책**: 폭탄/필드/상자는 고정 슬롯 인덱스(풀 bodyId는 슬롯에 묶임)
 - **역행 규칙**: 해당 프레임의 플레이어·폭탄·중력장·상자 상태를 그대로 복원. 폭발/필드 생성 이후 `Z`로 되감으면 그 이전 상태로 돌아감
+
+상세: [docs/snapshot-agreement.md](docs/snapshot-agreement.md)
