@@ -355,13 +355,12 @@ void BombSystem::FixedUpdate(float dt, PhysicsWorld& world, int playerId) {
     slot.fuseLeft -= dt;
 
     const bool fuseExpired = slot.fuseLeft <= 0.0f;
-    const bool hardImpact =
-        !slot.wasOnGround && b.onGround && slot.prevVelY >= BombTuning::impactExplodeSpeed;
+    const bool landedFromAir = !slot.wasOnGround && b.onGround;
 
     slot.wasOnGround = b.onGround;
     slot.prevVelY = b.vel.y;
 
-    if (fuseExpired || hardImpact) {
+    if (fuseExpired || landedFromAir) {
       Explode(static_cast<int>(i), world, playerId);
     }
   }

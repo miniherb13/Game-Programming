@@ -18,18 +18,11 @@ enum class FieldMode : std::uint8_t {
 
 struct GravityFieldTuning {
   static constexpr float minDistSq = 36.0f; // avoids singularity at center
-  static constexpr float strengthK = 1'850'000.0f;
-  static constexpr float maxForce = 26'000.0f;
+  static constexpr float strengthK = 2'600'000.0f;
+  static constexpr float maxForce = 34'000.0f;
 
-  static constexpr float defaultRadius = 175.0f;
-  static constexpr float defaultDuration = 0.95f;
-
-  static constexpr float explosionRadius = 165.0f;
-  static constexpr float explosionDuration = 0.85f;
-
-  static constexpr float manualRadius = 185.0f;
-  static constexpr float manualDuration = 1.15f;
-  static constexpr float manualCooldown = 0.35f;
+  static constexpr float explosionRadius = 210.0f;
+  static constexpr float explosionDuration = 1.25f;
 
   static constexpr int maxFields = 6;
 };
@@ -38,7 +31,7 @@ struct FieldSlot {
   bool active = false;
   FieldMode mode = FieldMode::Attract;
   Vec2 center{};
-  float radius = GravityFieldTuning::defaultRadius;
+  float radius = GravityFieldTuning::explosionRadius;
   float timeLeft = 0.0f;
 };
 
@@ -57,9 +50,7 @@ class GravityFieldSystem {
 public:
   GravityFieldSystem();
 
-  void Spawn(Vec2 center, FieldMode mode, float duration, float radius);
-  void SpawnFromExplosion(Vec2 center);
-  void TrySpawnManual(Vec2 worldPos, FieldMode mode);
+  void SpawnBlackHole(Vec2 center);
 
   void FixedUpdate(float dt);
   void ApplyForces(PhysicsWorld& world,
@@ -72,10 +63,8 @@ public:
   bool ToggleDebug();
   bool DebugEnabled() const { return m_debug; }
 
-  void SaveSnapshots(std::array<GravityFieldSnapshot, GravityFieldTuning::maxFields>& out,
-                     float& manualCooldown) const;
-  void LoadSnapshots(const std::array<GravityFieldSnapshot, GravityFieldTuning::maxFields>& in,
-                     float manualCooldown);
+  void SaveSnapshots(std::array<GravityFieldSnapshot, GravityFieldTuning::maxFields>& out) const;
+  void LoadSnapshots(const std::array<GravityFieldSnapshot, GravityFieldTuning::maxFields>& in);
 
 private:
   int AllocateSlot() const;
@@ -83,7 +72,6 @@ private:
   float EdgeFalloff(float dist, float radius) const;
 
   std::vector<FieldSlot> m_slots;
-  float m_manualCooldown = 0.0f;
   bool m_debug = false;
 };
 

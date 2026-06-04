@@ -45,7 +45,6 @@ struct BombTuning {
   static constexpr float groundFriction = 0.22f;
 
   static constexpr float fuseSeconds = 6.5f;
-  static constexpr float impactExplodeSpeed = 580.0f;
 
   static constexpr float explosionRadius = 95.0f;
   static constexpr float explosionImpulse = 420.0f;
