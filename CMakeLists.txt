@@ -37,6 +37,7 @@ add_executable(chrono_rush_demo
   src/game/GravityField.cpp
   src/game/PlayerSprite.cpp
   src/game/Game.cpp
+  src/render/UiText.cpp
 )
 
 target_include_directories(chrono_rush_demo PRIVATE
@@ -63,8 +64,12 @@ else()
   message(FATAL_ERROR "SDL2 target not found after FetchContent.")
 endif()
 
+if(WIN32)
+  target_link_libraries(chrono_rush_demo PRIVATE gdi32)
+endif()
+
 if(MSVC)
-  target_compile_options(chrono_rush_demo PRIVATE /W4 /permissive-)
+  target_compile_options(chrono_rush_demo PRIVATE /W4 /permissive- /utf-8)
 else()
   target_compile_options(chrono_rush_demo PRIVATE -Wall -Wextra -Wpedantic)
 endif()

@@ -5,6 +5,7 @@
 #include "game/GravityField.h"
 #include "game/PlayerSprite.h"
 #include "physics/PhysicsWorld.h"
+#include "render/UiText.h"
 #include "rewind/RewindBuffer.h"
 
 #include <vector>
@@ -16,23 +17,33 @@ namespace cr {
 class Game {
 public:
   Game(int width, int height);
+  ~Game();
 
+  void InitRenderer(SDL_Renderer* renderer);
   void HandleInput(float dt, const InputState& input);
   void FixedUpdate(float dt, const InputState& input);
   void Render(SDL_Renderer* r) const;
 
   bool WantsQuit() const { return m_quit; }
   bool IsPaused() const { return m_paused; }
+  bool IsStarted() const { return m_started; }
+  bool IsGameplayActive() const { return m_started && !m_paused; }
 
 private:
   void SpawnProps();
   float CameraX() const;
   Vec2 MouseWorldPos(const InputState& input) const;
+  void DrawTitleOverlay(SDL_Renderer* r) const;
+  void DrawPauseOverlay(SDL_Renderer* r) const;
 
   int m_w = 0;
   int m_h = 0;
   bool m_quit = false;
   bool m_paused = false;
+  bool m_started = false;
+  float m_uiBlinkPhase = 0.0f;
+
+  UiText m_ui;
 
   PhysicsWorld m_world;
 

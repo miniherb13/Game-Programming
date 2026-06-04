@@ -43,6 +43,7 @@ int App::Run() {
 
   Input input;
   Game game(W, H);
+  game.InitRenderer(renderer);
 
   constexpr float fixedDt = 1.0f / 60.0f;
   double acc = 0.0;
@@ -54,7 +55,7 @@ int App::Run() {
     input.Pump();
     game.HandleInput(static_cast<float>(dt), input.State());
 
-    if (!game.IsPaused()) {
+    if (game.IsGameplayActive()) {
       acc += dt;
       while (acc >= fixedDt) {
         game.FixedUpdate(fixedDt, input.State());

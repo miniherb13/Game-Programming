@@ -50,6 +50,16 @@ Game::Game(int width, int height)
   }
 }
 
+Game::~Game() {
+  m_ui.Shutdown();
+}
+
+void Game::InitRenderer(SDL_Renderer* /*renderer*/) {
+  if (!m_ui.Init(19)) {
+    Log(LogLevel::Warn, "UI text disabled (font load failed)");
+  }
+}
+
 void Game::SpawnProps() {
   const float groundY = static_cast<float>(m_h - 40);
   constexpr int propCount = 14;
@@ -71,8 +81,18 @@ Vec2 Game::MouseWorldPos(const InputState& input) const {
 }
 
 void Game::HandleInput(float dt, const InputState& input) {
+  m_uiBlinkPhase += dt;
+
   if (input.quit) {
     m_quit = true;
+    return;
+  }
+
+  if (!m_started) {
+    if (input.resumePressed) {
+      m_started = true;
+    }
+    m_lastInput = input;
     return;
   }
 
@@ -111,7 +131,7 @@ void Game::HandleInput(float dt, const InputState& input) {
 }
 
 void Game::FixedUpdate(float dt, const InputState& input) {
-  if (m_paused) return;
+  if (!m_started || m_paused) return;
 
   if (input.rewindPressed && m_stamina >= 3.0f) {
     bool any = false;
@@ -197,8 +217,84 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   m_stamina = std::min(3.0f, m_stamina + dt * 0.15f);
 }
 
+void Game::DrawTitleOverlay(SDL_Renderer* r) const {
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  SDL_SetRenderDrawColor(r, 0, 0, 0, 140);
+  SDL_Rect dim{0, 0, m_w, m_h};
+  SDL_RenderFillRect(r, &dim);
+
+  const SDL_Rect panel{m_w / 2 - 260, m_h / 2 - 200, 520, 360};
+  SDL_SetRenderDrawColor(r, 24, 24, 30, 245);
+  SDL_RenderFillRect(r, &panel);
+  SDL_SetRenderDrawColor(r, 110, 110, 130, 255);
+  SDL_RenderDrawRect(r, &panel);
+
+  const SDL_Color title{255, 255, 255, 255};
+  const SDL_Color body{210, 210, 220, 255};
+  const SDL_Color accent{120, 220, 255, 255};
+  const int line = m_ui.LineHeight();
+  int y = panel.y + 24;
+
+  m_ui.DrawCentered(r, m_w / 2, y, "Chrono Rush", title);
+  y += line + 4;
+  m_ui.DrawCentered(r, m_w / 2, y, "조작법", accent);
+  y += line + 10;
+
+  const char* lines[] = {
+      "C : 점프",
+      "X 홀드 / 떼기 : 폭탄 충전 후 발사",
+      "마우스 : 폭탄 조준 (점선 궤도)",
+      "V : 중력장 (인력)",
+      "Shift + V : 중력장 (척력)",
+      "G : 중력장 디버그 표시",
+      "Z : 시간 역행 (3초, 스태미나 3)",
+      "Esc : 일시정지",
+  };
+
+  for (const char* text : lines) {
+    m_ui.Draw(r, panel.x + 28, y, text, body);
+    y += line;
+  }
+
+  m_ui.DrawCenteredBlink(r,
+                         m_w / 2,
+                         panel.y + panel.h + 36,
+                         "SPACE를 눌러 시작하세요",
+                         SDL_Color{255, 255, 255, 255},
+                         m_uiBlinkPhase);
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+void Game::DrawPauseOverlay(SDL_Renderer* r) const {
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  SDL_SetRenderDrawColor(r, 0, 0, 0, 170);
+  SDL_Rect dim{0, 0, m_w, m_h};
+  SDL_RenderFillRect(r, &dim);
+
+  const SDL_Rect panel{m_w / 2 - 220, m_h / 2 - 120, 440, 200};
+  SDL_SetRenderDrawColor(r, 24, 24, 30, 245);
+  SDL_RenderFillRect(r, &panel);
+  SDL_SetRenderDrawColor(r, 110, 110, 130, 255);
+  SDL_RenderDrawRect(r, &panel);
+
+  const SDL_Color title{255, 220, 90, 255};
+  const SDL_Color hint{220, 220, 230, 255};
+  const int line = m_ui.LineHeight();
+  int y = panel.y + 28;
+
+  m_ui.DrawCentered(r, m_w / 2, y, "일시정지", title);
+  y += line + 20;
+  m_ui.DrawCentered(r, m_w / 2, y, "ESC : 종료", hint);
+  y += line;
+  m_ui.DrawCentered(r, m_w / 2, y, "SPACE : 재개", hint);
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
 void Game::Render(SDL_Renderer* r) const {
   const float camX = CameraX();
+  const bool gameplayHud = m_started && !m_paused;
 
   // Input debug indicators (C / X / Z)
   // Bright = Held, dim = not held. Border flash = pressed this frame.
@@ -219,10 +315,12 @@ void Game::Render(SDL_Renderer* r) const {
     }
   };
 
-  drawKey(16, 34, m_lastInput.jumpHeld, m_lastInput.jumpPressed, SDL_Color{90, 220, 255, 255});   // C
-  drawKey(42, 34, m_lastInput.throwHeld, m_lastInput.throwPressed, SDL_Color{255, 220, 80, 255}); // X
-  drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, SDL_Color{180, 80, 255, 255}); // Z
-  drawKey(94, 34, m_lastInput.fieldHeld, m_lastInput.fieldPressed, SDL_Color{150, 90, 255, 255});   // V
+  if (gameplayHud) {
+    drawKey(16, 34, m_lastInput.jumpHeld, m_lastInput.jumpPressed, SDL_Color{90, 220, 255, 255});   // C
+    drawKey(42, 34, m_lastInput.throwHeld, m_lastInput.throwPressed, SDL_Color{255, 220, 80, 255}); // X
+    drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, SDL_Color{180, 80, 255, 255}); // Z
+    drawKey(94, 34, m_lastInput.fieldHeld, m_lastInput.fieldPressed, SDL_Color{150, 90, 255, 255});   // V
+  }
 
   // Ground
   SDL_SetRenderDrawColor(r, 20, 20, 24, 255);
@@ -242,7 +340,7 @@ void Game::Render(SDL_Renderer* r) const {
                           screenX,
                           footY,
                           p.onGround,
-                          m_paused,
+                          m_paused || !m_started,
                           rewindPose,
                           m_bombs.IsCharging(),
                           m_throwReleasePoseLeft > 0.0f,
@@ -265,7 +363,8 @@ void Game::Render(SDL_Renderer* r) const {
 
   m_fields.Render(r, camX);
   const float groundY = static_cast<float>(m_h - 40);
-  const bool showAimGuide = m_rewindPoseLeft <= 0.0f && !m_lastInput.rewindHeld;
+  const bool showAimGuide =
+      m_started && m_rewindPoseLeft <= 0.0f && !m_lastInput.rewindHeld;
   m_bombs.Render(r, camX, groundY, m_world, m_world.Get(m_playerId), MouseWorldPos(m_lastInput), showAimGuide);
 
   if (m_fields.DebugEnabled()) {
@@ -274,8 +373,7 @@ void Game::Render(SDL_Renderer* r) const {
     SDL_RenderDrawRect(r, &tag);
   }
 
-  // Stamina bar (very simple)
-  {
+  if (gameplayHud) {
     const int barW = 240;
     const int barH = 12;
     const int x = 16;
@@ -290,34 +388,10 @@ void Game::Render(SDL_Renderer* r) const {
     SDL_RenderFillRect(r, &fg);
   }
 
-  if (m_paused) {
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(r, 0, 0, 0, 170);
-    SDL_Rect dim{0, 0, m_w, m_h};
-    SDL_RenderFillRect(r, &dim);
-
-    SDL_SetRenderDrawColor(r, 240, 240, 250, 255);
-    SDL_Rect titleBg{m_w / 2 - 200, m_h / 2 - 56, 400, 112};
-    SDL_RenderFillRect(r, &titleBg);
-    SDL_SetRenderDrawColor(r, 90, 90, 110, 255);
-    SDL_RenderDrawRect(r, &titleBg);
-
-    SDL_SetRenderDrawColor(r, 255, 220, 90, 255);
-    SDL_Rect pausedLabel{m_w / 2 - 72, m_h / 2 - 28, 144, 10};
-    SDL_RenderFillRect(r, &pausedLabel);
-
-    SDL_SetRenderDrawColor(r, 120, 220, 255, 255);
-    SDL_Rect spaceKey{m_w / 2 - 48, m_h / 2 + 8, 44, 22};
-    SDL_RenderFillRect(r, &spaceKey);
-    SDL_SetRenderDrawColor(r, 200, 240, 255, 255);
-    SDL_Rect spaceInner{spaceKey.x + 4, spaceKey.y + 8, 36, 6};
-    SDL_RenderFillRect(r, &spaceInner);
-
-    SDL_SetRenderDrawColor(r, 180, 180, 195, 255);
-    SDL_Rect escHint{m_w / 2 + 8, m_h / 2 + 14, 28, 10};
-    SDL_RenderFillRect(r, &escHint);
-
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+  if (!m_started) {
+    DrawTitleOverlay(r);
+  } else if (m_paused) {
+    DrawPauseOverlay(r);
   }
 }
 
