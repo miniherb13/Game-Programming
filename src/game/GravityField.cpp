@@ -147,7 +147,14 @@ void GravityFieldSystem::ApplyForces(PhysicsWorld& world,
 
     for (const auto& field : m_slots) {
       if (!field.active) continue;
-      body.force += ComputeForce(body.pos, field);
+      Vec2 f = ComputeForce(body.pos, field);
+      // Airborne player rising: ignore downward pull (bomb + jump overlap, black holes).
+      if (id == playerId && body.vel.y < -60.0f && f.y > 0.0f) {
+        f.y = 0.0f;
+      } else if (id == playerId && !body.onGround && body.vel.y < 0.0f && f.y > 0.0f) {
+        f.y *= 0.25f;
+      }
+      body.force += f;
     }
   };
 

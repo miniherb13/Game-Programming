@@ -38,6 +38,7 @@ add_executable(chrono_rush_demo
   src/game/PlayerSprite.cpp
   src/game/Game.cpp
   src/game/StageMap.cpp
+  src/game/StageGlacier.cpp
   src/render/UiText.cpp
 )
 

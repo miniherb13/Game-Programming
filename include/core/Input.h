@@ -36,6 +36,8 @@ public:
   void ClearGameplayPending();
   void ConsumeRewindPending();
   void ConsumeThrowReleasedPending();
+  // One C press → true on the first fixed step only (avoids multi-substep buffer refresh).
+  bool ConsumeJumpPressForFixedStep();
 
   const InputState& State() const { return m_state; }
 

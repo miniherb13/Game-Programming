@@ -331,14 +331,14 @@ void PlayerSprite::Draw(SDL_Renderer* renderer,
     frame = m_hasIdle ? &m_idle : &m_run[0];
   } else if (rewinding) {
     frame = &m_jump;
+  } else if (!onGround) {
+    frame = &m_jump;
   } else if (throwRelease) {
     frame = &m_throw[2];
   } else if (throwing) {
     const float t = std::clamp(throwCharge01, 0.0f, 1.0f);
     const int idx = std::min(1, static_cast<int>(t * 2.0f));
     frame = &m_throw[idx];
-  } else if (!onGround) {
-    frame = &m_jump;
   } else {
     const int idx =
         static_cast<int>(std::floor(runAnimPhase / kRunFrameSeconds)) % std::max(1, m_runFrameCount);

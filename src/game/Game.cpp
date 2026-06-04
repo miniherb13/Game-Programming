@@ -73,6 +73,10 @@ Game::Game(int width, int height)
   if (!m_stage.LoadMars()) {
     Log(LogLevel::Warn, "Mars stage assets missing; using fallback ground");
   }
+
+  if (!m_glacier.Load()) {
+    Log(LogLevel::Warn, "Glacier stage assets missing; stage 2 visuals deferred until PNGs are added");
+  }
 }
 
 Game::~Game() {
@@ -204,8 +208,9 @@ void Game::UpdateSpawn() {
     }
   }
 
-  // 앞쪽에 새 패턴 생성
-  while (m_nextSpawnX < camRight) {
+  // 앞쪽에 새 패턴 생성 (mars 5km + glacier 5km)
+  const float mapEndX = m_playerScreenX + kTotalMapLengthM;
+  while (m_nextSpawnX < camRight && m_nextSpawnX < mapEndX) {
     const int pattern = std::rand() % (maxPattern + 1);
     SpawnPattern(m_nextSpawnX, pattern);
 
@@ -269,6 +274,7 @@ void Game::Restart() {
   m_scrollSpeed        = 240.0f;
   m_stamina            = 3.0f;
   m_jumpBuffer         = 0.0f;
+  m_jumpGroundGrace    = 0.0f;
   m_coyote             = 0.0f;
   m_rewindCooldownLeft = 0.0f;
   m_rewindQueued       = false;
@@ -280,6 +286,9 @@ void Game::Restart() {
   m_patternIndex       = 0;
   m_fallingSpawnTimer  = 0.0f;
   m_fallingSpawnInterval = 8.0f;
+  m_glacierTransitionDone = false;
+  m_stageTransitionPlaying = false;
+  m_stageTransitionT = 0.0f;
 
   auto& p = m_world.Get(m_playerId);
   p.pos = {140.0f, static_cast<float>(m_h - 80)};
@@ -305,9 +314,77 @@ Vec2 Game::MouseWorldPos(const InputState& input) const {
   return {input.mousePos.x + CameraX(), input.mousePos.y};
 }
 
+void Game::UpdateStageTransition(float dt) {
+  if (!m_started || !m_glacier.IsLoaded()) return;
+
+  if (m_distance < kGlacierStageStartM - 100.0f) {
+    m_glacierTransitionDone = false;
+    m_stageTransitionPlaying = false;
+    m_stageTransitionT = 0.0f;
+    return;
+  }
+
+  if (!m_glacierTransitionDone && m_distance >= kGlacierStageStartM && !m_stageTransitionPlaying) {
+    m_stageTransitionPlaying = true;
+    m_stageTransitionT = 0.0f;
+  }
+
+  if (!m_stageTransitionPlaying) return;
+
+  m_stageTransitionT += dt / kStageTransitionSeconds;
+  if (m_stageTransitionT >= 1.0f) {
+    m_stageTransitionT = 1.0f;
+    m_stageTransitionPlaying = false;
+    m_glacierTransitionDone = true;
+  }
+}
+
+void Game::DrawStageBackground(SDL_Renderer* r, float camX, float groundY, bool useGlacier) const {
+  if (useGlacier) {
+    if (!m_glacier.IsDrawReady()) return;
+    m_glacier.DrawParallaxBackground(r, m_w, m_h, camX, groundY);
+    m_glacier.DrawTerrain(r, m_w, m_h, camX, groundY);
+    m_glacier.DrawParallaxNear(r, m_w, m_h, camX, groundY);
+    m_glacier.DrawStageObjects(r, m_w, m_h, camX, groundY);
+    return;
+  }
+
+  if (!m_stage.IsDrawReady()) {
+    SDL_SetRenderDrawColor(r, 20, 20, 24, 255);
+    SDL_Rect ground{0, m_h - 40, m_w, 40};
+    SDL_RenderFillRect(r, &ground);
+    return;
+  }
+
+  m_stage.DrawParallaxBackground(r, m_w, m_h, camX, groundY);
+  m_stage.DrawTerrain(r, m_w, m_h, camX, groundY);
+  m_stage.DrawParallaxNear(r, m_w, m_h, camX, groundY);
+  m_stage.DrawStageObjects(r, m_w, m_h, camX, groundY);
+}
+
+void Game::DrawStageTransitionFade(SDL_Renderer* r) const {
+  if (!m_stageTransitionPlaying) return;
+
+  const float t = std::clamp(m_stageTransitionT, 0.0f, 1.0f);
+  float alpha = 0.0f;
+  if (t < 0.5f) {
+    alpha = t / 0.5f;
+  } else {
+    alpha = 1.0f - (t - 0.5f) / 0.5f;
+  }
+
+  const Uint8 a = static_cast<Uint8>(std::clamp(alpha, 0.0f, 1.0f) * 255.0f);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  SDL_SetRenderDrawColor(r, 255, 255, 255, a);
+  SDL_Rect full{0, 0, m_w, m_h};
+  SDL_RenderFillRect(r, &full);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
 void Game::HandleInput(float dt, Input& input) {
   const InputState& in = input.State();
   m_uiBlinkPhase += dt;
+  UpdateStageTransition(dt);
 
   if (in.quit) {
     m_quit = true;
@@ -361,11 +438,11 @@ void Game::HandleInput(float dt, Input& input) {
   m_lastInput = in;
 }
 
-void Game::FixedUpdate(float dt, const InputState& input) {
+void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   if (!m_started || m_paused) return;
 
   if (m_gameOver) {
-    if (input.jumpPressed) Restart();
+    if (inputDevice.ConsumeJumpPressForFixedStep() || input.jumpPressed) Restart();
     return;
   }
 
@@ -404,11 +481,12 @@ void Game::FixedUpdate(float dt, const InputState& input) {
     }
   }
 
-  // Jump buffer: only from a press (holding C must not re-trigger every landing frame).
-  if (!rewindFrame && input.jumpPressed) {
+  // Jump buffer: one edge per C press (not every physics sub-step while pending is latched).
+  if (!rewindFrame && inputDevice.ConsumeJumpPressForFixedStep()) {
     m_jumpBuffer = 0.12f;
   }
   m_jumpBuffer = std::max(0.0f, m_jumpBuffer - dt);
+  m_jumpGroundGrace = std::max(0.0f, m_jumpGroundGrace - dt);
 
   m_snapshotScratch.Capture(m_world,
                             m_playerId,
@@ -424,6 +502,16 @@ void Game::FixedUpdate(float dt, const InputState& input) {
 
   if (input.debugPressed) m_fields.ToggleDebug();
 
+  // Jump before physics; lift clear of ground so SolveBounds does not cancel takeoff.
+  if (!rewindFrame && m_jumpBuffer > 0.0f && (p.onGround || m_coyote > 0.0f)) {
+    p.vel.y = -520.0f;
+    p.pos.y -= p.circle.radius * 0.55f + 4.0f;
+    p.onGround = false;
+    m_jumpGroundGrace = 0.14f;
+    m_jumpBuffer = 0.0f;
+    m_coyote = 0.0f;
+  }
+
   m_fields.ApplyForces(m_world, m_playerId, m_bombs.BodyIds(), m_propIds);
 
   const float laneXBeforeStep = p.pos.x;
@@ -435,19 +523,13 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   p.pos.x = laneXBeforeStep + m_scrollSpeed * dt;
   p.vel.x = m_scrollSpeed;
 
-  if (p.onGround) {
+  if (m_jumpGroundGrace > 0.0f) {
+    p.onGround = false;
+  } else if (p.onGround) {
     m_coyote = 0.10f;
     m_runAnimPhase += dt;
   } else {
     m_coyote = std::max(0.0f, m_coyote - dt);
-  }
-
-  if (!rewindFrame && m_jumpBuffer > 0.0f && (p.onGround || m_coyote > 0.0f)) {
-    p.vel.y = -520.0f;
-    p.pos.y -= 1.0f;
-    p.onGround = false;
-    m_jumpBuffer = 0.0f;
-    m_coyote = 0.0f;
   }
 
   m_distance += m_scrollSpeed * dt;
@@ -582,16 +664,18 @@ void Game::Render(SDL_Renderer* r) const {
   const bool gameplayHud = m_started && !m_paused;
 
   m_stage.EnsureUploaded(r);
-  if (m_stage.IsDrawReady()) {
-    m_stage.DrawParallaxBackground(r, m_w, m_h, camX, groundY);
-    m_stage.DrawTerrain(r, m_w, m_h, camX, groundY);
-    m_stage.DrawParallaxNear(r, m_w, m_h, camX, groundY);
-    m_stage.DrawStageObjects(r, m_w, m_h, camX, groundY);
-  } else {
-    SDL_SetRenderDrawColor(r, 20, 20, 24, 255);
-    SDL_Rect ground{0, m_h - 40, m_w, 40};
-    SDL_RenderFillRect(r, &ground);
+  if (m_glacier.IsLoaded()) {
+    m_glacier.EnsureUploaded(r);
   }
+
+  bool useGlacier = false;
+  if (m_stageTransitionPlaying && m_glacier.IsDrawReady()) {
+    useGlacier = m_stageTransitionT >= 0.5f;
+  } else if (m_glacierTransitionDone && m_glacier.IsDrawReady() && m_distance >= kGlacierStageStartM) {
+    useGlacier = true;
+  }
+
+  DrawStageBackground(r, camX, groundY, useGlacier);
 
   auto drawKey = [&](int x, int y, bool held, bool pressed, SDL_Color base) {
     SDL_Rect bg{x, y, 22, 22};
@@ -620,6 +704,7 @@ void Game::Render(SDL_Renderer* r) const {
     const auto& p = m_world.Get(m_playerId);
     const float screenX = p.pos.x - camX;
     const bool rewindPose = m_rewindPoseLeft > 0.0f;
+    const bool airPose = !p.onGround || m_jumpGroundGrace > 0.0f || m_jumpBuffer > 0.0f;
     const float footY =
         rewindPose ? static_cast<float>(m_h) * 0.5f + kPlayerDisplayHeight * 0.5f : p.pos.y + p.circle.radius;
     m_playerSprite.EnsureUploaded(r);
@@ -627,7 +712,7 @@ void Game::Render(SDL_Renderer* r) const {
       m_playerSprite.Draw(r,
                           screenX,
                           footY,
-                          p.onGround,
+                          !airPose,
                           m_paused || !m_started,
                           rewindPose,
                           m_bombs.IsCharging(),
@@ -668,6 +753,8 @@ void Game::Render(SDL_Renderer* r) const {
   const bool showAimGuide =
       m_started && m_rewindPoseLeft <= 0.0f && !m_lastInput.rewindHeld;
   m_bombs.Render(r, camX, groundY, m_world, m_world.Get(m_playerId), MouseWorldPos(m_lastInput), showAimGuide);
+
+  DrawStageTransitionFade(r);
 
   if (gameplayHud) {
     // 스태미나 바

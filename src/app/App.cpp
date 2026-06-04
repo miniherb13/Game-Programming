@@ -61,7 +61,7 @@ int App::Run() {
       acc += dt;
       while (acc >= fixedDt) {
         input.ApplyPending();
-        game.FixedUpdate(fixedDt, input.State());
+        game.FixedUpdate(fixedDt, input.State(), input);
         acc -= fixedDt;
         hadFixedStep = true;
       }

@@ -21,15 +21,19 @@ void Input::BeginFrame() {
 }
 
 void Input::ApplyPending() {
-  if (m_jumpPending) m_state.jumpPressed = true;
   if (m_rewindPending) m_state.rewindPressed = true;
   if (m_debugPending) m_state.debugPressed = true;
   if (m_throwReleasedPending) m_state.throwReleased = true;
 }
 
+bool Input::ConsumeJumpPressForFixedStep() {
+  if (!m_jumpPending) return false;
+  m_jumpPending = false;
+  return true;
+}
+
 void Input::FinishGameplayFrame(bool hadFixedStep) {
   if (hadFixedStep) {
-    m_jumpPending = false;
     m_debugPending = false;
   }
 }
