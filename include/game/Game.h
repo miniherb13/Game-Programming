@@ -63,6 +63,8 @@ private:
   float m_runAnimPhase = 0.0f;
   float m_throwReleasePoseLeft = 0.0f;
   float m_rewindPoseLeft = 0.0f;
+  bool m_rewindQueued = false;
+  float m_rewindCooldownLeft = 0.0f;
 
   RewindBuffer m_rewind;
   GameSnapshot m_snapshotScratch{};

@@ -12,7 +12,6 @@ void Input::BeginFrame() {
   m_state.jumpPressed = false;
   m_state.throwPressed = false;
   m_state.rewindPressed = false;
-  m_state.fieldPressed = false;
   m_state.debugPressed = false;
   m_state.pausePressed = false;
   m_state.resumePressed = false;
@@ -34,12 +33,10 @@ void Input::Pump() {
         if (e.key.keysym.scancode == SDL_SCANCODE_C) m_state.jumpPressed = true;
         if (e.key.keysym.scancode == SDL_SCANCODE_X) m_state.throwPressed = true;
         if (e.key.keysym.scancode == SDL_SCANCODE_Z) m_state.rewindPressed = true;
-        if (e.key.keysym.scancode == SDL_SCANCODE_V) m_state.fieldPressed = true;
         if (e.key.keysym.scancode == SDL_SCANCODE_G) m_state.debugPressed = true;
         if (e.key.keysym.scancode == SDL_SCANCODE_C ||
             e.key.keysym.scancode == SDL_SCANCODE_X ||
             e.key.keysym.scancode == SDL_SCANCODE_Z ||
-            e.key.keysym.scancode == SDL_SCANCODE_V ||
             e.key.keysym.scancode == SDL_SCANCODE_G) {
           Log(LogLevel::Info, std::string("KEYDOWN scancode=") + std::to_string(static_cast<int>(e.key.keysym.scancode)));
         }
@@ -78,10 +75,6 @@ void Input::Pump() {
   m_state.jumpHeld = keys[SDL_SCANCODE_C] != 0;
   m_state.throwHeld = keys[SDL_SCANCODE_X] != 0;
   m_state.rewindHeld = keys[SDL_SCANCODE_Z] != 0;
-  m_state.fieldHeld = keys[SDL_SCANCODE_V] != 0;
-
-  const SDL_Keymod mod = SDL_GetModState();
-  m_state.shiftHeld = (mod & KMOD_SHIFT) != 0;
 }
 
 } // namespace cr

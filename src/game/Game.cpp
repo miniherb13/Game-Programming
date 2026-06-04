@@ -13,6 +13,7 @@ namespace {
 
 constexpr float kPlayerDisplayHeight = 82.0f;
 constexpr float kRewindPoseSeconds = 1.0f;
+constexpr float kRewindStaminaCost = 3.0f;
 
 } // namespace
 
@@ -41,7 +42,7 @@ Game::Game(int width, int height)
   p.linearDamping = 0.8f;
 
   m_bombs.InitPool(m_world);
-  m_bombs.SetExplosionHandler([this](Vec2 center) { m_fields.SpawnFromExplosion(center); });
+  m_bombs.SetExplosionHandler([this](Vec2 center) { m_fields.SpawnBlackHole(center); });
 
   SpawnProps();
 
@@ -84,14 +85,16 @@ void Game::CheckGameOver() {
 }
 
 void Game::Restart() {
-  m_gameOver    = false;
-  m_distance    = 0.0f;
-  m_elapsed     = 0.0f;
-  m_scrollSpeed = 240.0f;
-  m_stamina     = 3.0f;
-  m_jumpBuffer  = 0.0f;
-  m_coyote      = 0.0f;
-  m_rewind      = RewindBuffer(180);
+  m_gameOver        = false;
+  m_distance        = 0.0f;
+  m_elapsed         = 0.0f;
+  m_scrollSpeed     = 240.0f;
+  m_stamina         = 3.0f;
+  m_jumpBuffer      = 0.0f;
+  m_coyote          = 0.0f;
+  m_rewindCooldownLeft = 0.0f;
+  m_rewindQueued    = false;
+  m_rewind          = RewindBuffer(180);
 
   auto& p = m_world.Get(m_playerId);
   p.pos = {140.0f, static_cast<float>(m_h - 80)};
@@ -137,7 +140,8 @@ void Game::HandleInput(float dt, const InputState& input) {
       m_bombs.CancelCharge();
       m_throwReleasePoseLeft = 0.0f;
       m_jumpBuffer = 0.0f;
-      if (m_stamina >= 3.0f) {
+      if (m_rewindCooldownLeft <= 0.0f && m_stamina >= kRewindStaminaCost) {
+        m_rewindQueued = true;
         m_rewindPoseLeft = kRewindPoseSeconds;
       }
     } else {
@@ -162,30 +166,38 @@ void Game::FixedUpdate(float dt, const InputState& input) {
     return;
   }
 
-  if (input.rewindPressed && m_stamina >= 3.0f) {
-    bool any = false;
-    const std::size_t frames = m_rewind.Capacity();
-    for (std::size_t i = 0; i < frames; i++) {
-      if (!m_rewind.PopFrame(m_snapshotScratch)) break;
-      any = true;
-    }
+  m_rewindCooldownLeft = std::max(0.0f, m_rewindCooldownLeft - dt);
 
-    if (any) {
-      m_snapshotScratch.Apply(m_world,
-                              m_playerId,
-                              m_jumpBuffer,
-                              m_coyote,
-                              m_stamina,
-                              m_bombs,
-                              m_fields,
-                              m_propIds);
-      m_stamina = std::max(0.0f, m_stamina - 3.0f);
-      m_rewindPoseLeft = kRewindPoseSeconds;
-      return;
+  const bool rewindFrame = m_rewindQueued;
+  if (m_rewindQueued) {
+    m_rewindQueued = false;
+
+    if (m_rewindCooldownLeft <= 0.0f && m_stamina >= kRewindStaminaCost &&
+        m_rewind.Size() >= m_rewind.Capacity()) {
+      bool any = false;
+      const std::size_t frames = m_rewind.Capacity();
+      for (std::size_t i = 0; i < frames; i++) {
+        if (!m_rewind.PopFrame(m_snapshotScratch)) break;
+        any = true;
+      }
+
+      if (any) {
+        const float staminaBeforeRewind = m_stamina;
+        m_snapshotScratch.Apply(m_world,
+                                m_playerId,
+                                m_jumpBuffer,
+                                m_coyote,
+                                m_stamina,
+                                m_bombs,
+                                m_fields,
+                                m_propIds);
+        m_stamina = std::max(0.0f, staminaBeforeRewind - kRewindStaminaCost);
+        m_rewindCooldownLeft = kRewindStaminaCost;
+        m_rewindPoseLeft = kRewindPoseSeconds;
+        return;
+      }
     }
   }
-
-  const bool rewindFrame = input.rewindPressed;
 
   if (!rewindFrame) {
     if (input.jumpPressed) m_jumpBuffer = 0.50f;
@@ -208,11 +220,6 @@ void Game::FixedUpdate(float dt, const InputState& input) {
 
   if (input.debugPressed) m_fields.ToggleDebug();
 
-  if (!rewindFrame && input.fieldPressed && !m_bombs.IsAiming(input)) {
-    const FieldMode mode = input.shiftHeld ? FieldMode::Repel : FieldMode::Attract;
-    m_fields.TrySpawnManual(MouseWorldPos(input), mode);
-  }
-
   m_fields.ApplyForces(m_world, m_playerId, m_bombs.BodyIds(), m_propIds);
 
   m_world.Step(dt);
@@ -226,7 +233,6 @@ void Game::FixedUpdate(float dt, const InputState& input) {
     m_coyote = std::max(0.0f, m_coyote - dt);
   }
 
-  // Apply jump AFTER physics so "landing frame" isn't delayed.
   if (!rewindFrame && m_jumpBuffer > 0.0f && (p.onGround || m_coyote > 0.0f)) {
     Log(LogLevel::Info,
         std::string("JUMP! onGround=") + (p.onGround ? "1" : "0") +
@@ -276,11 +282,8 @@ void Game::DrawTitleOverlay(SDL_Renderer* r) const {
 
   const char* lines[] = {
       "C : 점프",
-      "X 홀드 / 떼기 : 폭탄 충전 후 발사",
+      "X 홀드 / 떼기 : 폭탄 충전·발사 (폭발=블랙홀)",
       "마우스 : 폭탄 조준 (점선 궤도)",
-      "V : 중력장 (인력)",
-      "Shift + V : 중력장 (척력)",
-      "G : 중력장 디버그 표시",
       "Z : 시간 역행 (3초, 스태미나 3)",
       "Esc : 일시정지",
   };
@@ -372,10 +375,9 @@ void Game::Render(SDL_Renderer* r) const {
   };
 
   if (gameplayHud) {
-    drawKey(16, 34, m_lastInput.jumpHeld, m_lastInput.jumpPressed, SDL_Color{90, 220, 255, 255});
-    drawKey(42, 34, m_lastInput.throwHeld, m_lastInput.throwPressed, SDL_Color{255, 220, 80, 255});
-    drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, SDL_Color{180, 80, 255, 255});
-    drawKey(94, 34, m_lastInput.fieldHeld, m_lastInput.fieldPressed, SDL_Color{150, 90, 255, 255});
+    drawKey(16, 34, m_lastInput.jumpHeld, m_lastInput.jumpPressed, SDL_Color{90, 220, 255, 255});   // C
+    drawKey(42, 34, m_lastInput.throwHeld, m_lastInput.throwPressed, SDL_Color{255, 220, 80, 255}); // X
+    drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, SDL_Color{180, 80, 255, 255}); // Z
   }
 
   // Ground
@@ -422,12 +424,6 @@ void Game::Render(SDL_Renderer* r) const {
   const bool showAimGuide =
       m_started && m_rewindPoseLeft <= 0.0f && !m_lastInput.rewindHeld;
   m_bombs.Render(r, camX, groundY, m_world, m_world.Get(m_playerId), MouseWorldPos(m_lastInput), showAimGuide);
-
-  if (m_fields.DebugEnabled()) {
-    SDL_SetRenderDrawColor(r, 255, 255, 120, 255);
-    SDL_Rect tag{120, 34, 56, 22};
-    SDL_RenderDrawRect(r, &tag);
-  }
 
   if (gameplayHud) {
     // 스태미나 바

@@ -22,7 +22,7 @@ void GameSnapshot::Capture(const PhysicsWorld& world,
   stamina = stamina_;
 
   bombSystem.SaveSnapshots(bombs, world);
-  fieldSystem.SaveSnapshots(fields, fieldManualCooldown);
+  fieldSystem.SaveSnapshots(fields);
 
   propCount = std::min(propIds.size(), kMaxProps);
   for (std::size_t i = 0; i < propCount; i++) {
@@ -44,7 +44,7 @@ void GameSnapshot::Apply(PhysicsWorld& world,
   stamina_ = stamina;
 
   bombSystem.LoadSnapshots(bombs, world);
-  fieldSystem.LoadSnapshots(fields, fieldManualCooldown);
+  fieldSystem.LoadSnapshots(fields);
 
   const std::size_t n = std::min(propIds.size(), propCount);
   for (std::size_t i = 0; i < n; i++) {

@@ -64,18 +64,15 @@ void GravityFieldSnapshot::Load(FieldSlot& slot) const {
   slot.timeLeft = timeLeft;
 }
 
-void GravityFieldSystem::SaveSnapshots(std::array<GravityFieldSnapshot, GravityFieldTuning::maxFields>& out,
-                                       float& manualCooldown) const {
-  manualCooldown = m_manualCooldown;
+void GravityFieldSystem::SaveSnapshots(
+    std::array<GravityFieldSnapshot, GravityFieldTuning::maxFields>& out) const {
   for (std::size_t i = 0; i < m_slots.size(); i++) {
     out[i] = GravityFieldSnapshot::Save(m_slots[i]);
   }
 }
 
 void GravityFieldSystem::LoadSnapshots(
-    const std::array<GravityFieldSnapshot, GravityFieldTuning::maxFields>& in,
-    float manualCooldown) {
-  m_manualCooldown = manualCooldown;
+    const std::array<GravityFieldSnapshot, GravityFieldTuning::maxFields>& in) {
   for (std::size_t i = 0; i < m_slots.size(); i++) {
     in[i].Load(m_slots[i]);
   }
@@ -84,25 +81,14 @@ void GravityFieldSystem::LoadSnapshots(
 GravityFieldSystem::GravityFieldSystem()
     : m_slots(static_cast<std::size_t>(GravityFieldTuning::maxFields)) {}
 
-void GravityFieldSystem::Spawn(Vec2 center, FieldMode mode, float duration, float radius) {
+void GravityFieldSystem::SpawnBlackHole(Vec2 center) {
   const int slot = AllocateSlot();
   auto& f = m_slots[static_cast<std::size_t>(slot)];
   f.active = true;
-  f.mode = mode;
+  f.mode = FieldMode::Attract;
   f.center = center;
-  f.radius = radius;
-  f.timeLeft = duration;
-}
-
-void GravityFieldSystem::SpawnFromExplosion(Vec2 center) {
-  Spawn(center, FieldMode::Attract, GravityFieldTuning::explosionDuration, GravityFieldTuning::explosionRadius);
-}
-
-void GravityFieldSystem::TrySpawnManual(Vec2 worldPos, FieldMode mode) {
-  if (m_manualCooldown > 0.0f) return;
-
-  Spawn(worldPos, mode, GravityFieldTuning::manualDuration, GravityFieldTuning::manualRadius);
-  m_manualCooldown = GravityFieldTuning::manualCooldown;
+  f.radius = GravityFieldTuning::explosionRadius;
+  f.timeLeft = GravityFieldTuning::explosionDuration;
 }
 
 int GravityFieldSystem::AllocateSlot() const {
@@ -144,8 +130,6 @@ Vec2 GravityFieldSystem::ComputeForce(Vec2 bodyPos, const FieldSlot& field) cons
 }
 
 void GravityFieldSystem::FixedUpdate(float dt) {
-  m_manualCooldown = std::max(0.0f, m_manualCooldown - dt);
-
   for (auto& field : m_slots) {
     if (!field.active) continue;
     field.timeLeft -= dt;
@@ -182,7 +166,8 @@ void GravityFieldSystem::Render(SDL_Renderer* r, float cameraX) const {
     if (!field.active) continue;
 
     const Vec2 screen{field.center.x - cameraX, field.center.y};
-    const float lifeT = std::clamp(field.timeLeft / GravityFieldTuning::defaultDuration, 0.0f, 1.0f);
+    const float lifeT =
+        std::clamp(field.timeLeft / GravityFieldTuning::explosionDuration, 0.0f, 1.0f);
     const float pulse = 0.88f + 0.12f * std::sin((1.0f - lifeT) * 18.0f);
 
     const bool attract = field.mode == FieldMode::Attract;
