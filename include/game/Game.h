@@ -4,6 +4,7 @@
 #include "game/Bomb.h"
 #include "game/GravityField.h"
 #include "game/PlayerSprite.h"
+#include "game/StageMap.h"
 #include "physics/PhysicsWorld.h"
 #include "render/UiText.h"
 #include "rewind/RewindBuffer.h"
@@ -20,7 +21,7 @@ public:
   ~Game();
 
   void InitRenderer(SDL_Renderer* renderer);
-  void HandleInput(float dt, const InputState& input);
+  void HandleInput(float dt, Input& input);
   void FixedUpdate(float dt, const InputState& input);
   void Render(SDL_Renderer* r) const;
 
@@ -59,8 +60,9 @@ private:
   BombSystem m_bombs{16};
   GravityFieldSystem m_fields;
   PlayerSprite m_playerSprite;
-  std::vector<int> m_propIds;       // 땅 장애물
-  std::vector<int> m_fallingIds;    // 떨어지는 장애물
+  StageMap m_stage;
+  std::vector<int> m_propIds;     // 땅 장애물
+  std::vector<int> m_fallingIds;  // 떨어지는 장애물
 
   float m_scrollSpeed = 240.0f;
   float m_playerScreenX = 140.0f;

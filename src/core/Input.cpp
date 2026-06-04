@@ -17,6 +17,36 @@ void Input::BeginFrame() {
   m_state.resumePressed = false;
   m_state.throwReleased = false;
   m_state.mouseReleased = false;
+  // m_*Pending stay until consumed (see ApplyPending / FinishGameplayFrame).
+}
+
+void Input::ApplyPending() {
+  if (m_jumpPending) m_state.jumpPressed = true;
+  if (m_rewindPending) m_state.rewindPressed = true;
+  if (m_debugPending) m_state.debugPressed = true;
+  if (m_throwReleasedPending) m_state.throwReleased = true;
+}
+
+void Input::FinishGameplayFrame(bool hadFixedStep) {
+  if (hadFixedStep) {
+    m_jumpPending = false;
+    m_debugPending = false;
+  }
+}
+
+void Input::ClearGameplayPending() {
+  m_jumpPending = false;
+  m_debugPending = false;
+  m_rewindPending = false;
+  m_throwReleasedPending = false;
+}
+
+void Input::ConsumeRewindPending() {
+  m_rewindPending = false;
+}
+
+void Input::ConsumeThrowReleasedPending() {
+  m_throwReleasedPending = false;
 }
 
 void Input::Pump() {
@@ -30,10 +60,19 @@ void Input::Pump() {
         if (e.key.repeat) break;
         if (e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) m_state.pausePressed = true;
         if (e.key.keysym.scancode == SDL_SCANCODE_SPACE) m_state.resumePressed = true;
-        if (e.key.keysym.scancode == SDL_SCANCODE_C) m_state.jumpPressed = true;
+        if (e.key.keysym.scancode == SDL_SCANCODE_C) {
+          m_state.jumpPressed = true;
+          m_jumpPending = true;
+        }
         if (e.key.keysym.scancode == SDL_SCANCODE_X) m_state.throwPressed = true;
-        if (e.key.keysym.scancode == SDL_SCANCODE_Z) m_state.rewindPressed = true;
-        if (e.key.keysym.scancode == SDL_SCANCODE_G) m_state.debugPressed = true;
+        if (e.key.keysym.scancode == SDL_SCANCODE_Z) {
+          m_state.rewindPressed = true;
+          m_rewindPending = true;
+        }
+        if (e.key.keysym.scancode == SDL_SCANCODE_G) {
+          m_state.debugPressed = true;
+          m_debugPending = true;
+        }
         if (e.key.keysym.scancode == SDL_SCANCODE_C ||
             e.key.keysym.scancode == SDL_SCANCODE_X ||
             e.key.keysym.scancode == SDL_SCANCODE_Z ||
@@ -42,7 +81,10 @@ void Input::Pump() {
         }
         break;
       case SDL_KEYUP:
-        if (e.key.keysym.scancode == SDL_SCANCODE_X) m_state.throwReleased = true;
+        if (e.key.keysym.scancode == SDL_SCANCODE_X) {
+          m_state.throwReleased = true;
+          m_throwReleasedPending = true;
+        }
         if (e.key.keysym.scancode == SDL_SCANCODE_C ||
             e.key.keysym.scancode == SDL_SCANCODE_X ||
             e.key.keysym.scancode == SDL_SCANCODE_Z) {

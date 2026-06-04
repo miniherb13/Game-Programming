@@ -37,6 +37,7 @@ add_executable(chrono_rush_demo
   src/game/GravityField.cpp
   src/game/PlayerSprite.cpp
   src/game/Game.cpp
+  src/game/StageMap.cpp
   src/render/UiText.cpp
 )
 

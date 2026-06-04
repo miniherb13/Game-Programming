@@ -21,7 +21,7 @@ struct GravityFieldTuning {
   static constexpr float strengthK = 2'600'000.0f;
   static constexpr float maxForce = 34'000.0f;
 
-  static constexpr float explosionRadius = 210.0f;
+  static constexpr float explosionRadius = 85.0f;
   static constexpr float explosionDuration = 1.25f;
 
   static constexpr int maxFields = 6;

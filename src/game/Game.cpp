@@ -41,7 +41,7 @@ Game::Game(int width, int height)
   m_playerId = m_world.CreateCircle(16.0f, {140.0f, static_cast<float>(height - 80)}, 1.0f, false);
   auto& p = m_world.Get(m_playerId);
   p.restitution = 0.0f;
-  p.linearDamping = 0.8f;
+  p.linearDamping = 0.15f;
 
   m_bombs.InitPool(m_world);
   m_bombs.SetExplosionHandler([this](Vec2 center) {
@@ -68,6 +68,10 @@ Game::Game(int width, int height)
 
   if (!m_playerSprite.Load()) {
     Log(LogLevel::Error, "Failed to load assets/player/*.png");
+  }
+
+  if (!m_stage.LoadMars()) {
+    Log(LogLevel::Warn, "Mars stage assets missing; using fallback ground");
   }
 }
 
@@ -301,23 +305,24 @@ Vec2 Game::MouseWorldPos(const InputState& input) const {
   return {input.mousePos.x + CameraX(), input.mousePos.y};
 }
 
-void Game::HandleInput(float dt, const InputState& input) {
+void Game::HandleInput(float dt, Input& input) {
+  const InputState& in = input.State();
   m_uiBlinkPhase += dt;
 
-  if (input.quit) {
+  if (in.quit) {
     m_quit = true;
     return;
   }
 
   if (!m_started) {
-    if (input.resumePressed) {
+    if (in.resumePressed) {
       m_started = true;
     }
-    m_lastInput = input;
+    m_lastInput = in;
     return;
   }
 
-  if (input.pausePressed) {
+  if (in.pausePressed) {
     if (m_paused) {
       m_quit = true;
     } else {
@@ -325,13 +330,13 @@ void Game::HandleInput(float dt, const InputState& input) {
     }
   }
 
-  if (m_paused && input.resumePressed) {
+  if (m_paused && in.resumePressed) {
     m_paused = false;
   }
 
   if (!m_paused) {
     auto& p = m_world.Get(m_playerId);
-    if (input.rewindPressed) {
+    if (in.rewindPressed) {
       m_bombs.CancelCharge();
       m_throwReleasePoseLeft = 0.0f;
       m_jumpBuffer = 0.0f;
@@ -339,17 +344,21 @@ void Game::HandleInput(float dt, const InputState& input) {
         m_rewindQueued = true;
         m_rewindPoseLeft = kRewindPoseSeconds;
       }
+      input.ConsumeRewindPending();
     } else {
-      if (m_bombs.IsCharging() && input.throwReleased) {
+      if (m_bombs.IsCharging() && in.throwReleased) {
         m_throwReleasePoseLeft = 0.35f;
       }
-      m_bombs.UpdateThrow(dt, input, MouseWorldPos(input), m_world, p);
+      m_bombs.UpdateThrow(dt, in, MouseWorldPos(in), m_world, p);
+      if (in.throwReleased) {
+        input.ConsumeThrowReleasedPending();
+      }
     }
     m_throwReleasePoseLeft = std::max(0.0f, m_throwReleasePoseLeft - dt);
     m_rewindPoseLeft = std::max(0.0f, m_rewindPoseLeft - dt);
   }
 
-  m_lastInput = input;
+  m_lastInput = in;
 }
 
 void Game::FixedUpdate(float dt, const InputState& input) {
@@ -395,9 +404,9 @@ void Game::FixedUpdate(float dt, const InputState& input) {
     }
   }
 
-  if (!rewindFrame) {
-    if (input.jumpPressed) m_jumpBuffer = 0.50f;
-    if (input.jumpHeld) m_jumpBuffer = std::max(m_jumpBuffer, 0.10f);
+  // Jump buffer: only from a press (holding C must not re-trigger every landing frame).
+  if (!rewindFrame && input.jumpPressed) {
+    m_jumpBuffer = 0.12f;
   }
   m_jumpBuffer = std::max(0.0f, m_jumpBuffer - dt);
 
@@ -412,15 +421,19 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   m_rewind.PushFrame(m_snapshotScratch);
 
   auto& p = m_world.Get(m_playerId);
-  p.vel.x = m_scrollSpeed;
 
   if (input.debugPressed) m_fields.ToggleDebug();
 
   m_fields.ApplyForces(m_world, m_playerId, m_bombs.BodyIds(), m_propIds);
 
+  const float laneXBeforeStep = p.pos.x;
   m_world.Step(dt);
   m_fields.FixedUpdate(dt);
   m_bombs.FixedUpdate(dt, m_world, m_playerId);
+
+  // Runner lane: advance X by scroll only (black hole / blast must not drag world X backward).
+  p.pos.x = laneXBeforeStep + m_scrollSpeed * dt;
+  p.vel.x = m_scrollSpeed;
 
   if (p.onGround) {
     m_coyote = 0.10f;
@@ -430,12 +443,6 @@ void Game::FixedUpdate(float dt, const InputState& input) {
   }
 
   if (!rewindFrame && m_jumpBuffer > 0.0f && (p.onGround || m_coyote > 0.0f)) {
-    Log(LogLevel::Info,
-        std::string("JUMP! onGround=") + (p.onGround ? "1" : "0") +
-            " coyote=" + std::to_string(m_coyote) +
-            " buffer=" + std::to_string(m_jumpBuffer) +
-            " posY=" + std::to_string(p.pos.y) +
-            " velY=" + std::to_string(p.vel.y));
     p.vel.y = -520.0f;
     p.pos.y -= 1.0f;
     p.onGround = false;
@@ -571,7 +578,20 @@ void Game::DrawGameOverOverlay(SDL_Renderer* r) const {
 
 void Game::Render(SDL_Renderer* r) const {
   const float camX = CameraX();
+  const float groundY = static_cast<float>(m_h - 40);
   const bool gameplayHud = m_started && !m_paused;
+
+  m_stage.EnsureUploaded(r);
+  if (m_stage.IsDrawReady()) {
+    m_stage.DrawParallaxBackground(r, m_w, m_h, camX, groundY);
+    m_stage.DrawTerrain(r, m_w, m_h, camX, groundY);
+    m_stage.DrawParallaxNear(r, m_w, m_h, camX, groundY);
+    m_stage.DrawStageObjects(r, m_w, m_h, camX, groundY);
+  } else {
+    SDL_SetRenderDrawColor(r, 20, 20, 24, 255);
+    SDL_Rect ground{0, m_h - 40, m_w, 40};
+    SDL_RenderFillRect(r, &ground);
+  }
 
   auto drawKey = [&](int x, int y, bool held, bool pressed, SDL_Color base) {
     SDL_Rect bg{x, y, 22, 22};
@@ -596,12 +616,6 @@ void Game::Render(SDL_Renderer* r) const {
     drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, SDL_Color{180, 80, 255, 255});
   }
 
-  // Ground
-  SDL_SetRenderDrawColor(r, 20, 20, 24, 255);
-  SDL_Rect ground{0, m_h - 40, m_w, 40};
-  SDL_RenderFillRect(r, &ground);
-
-  // Player sprite
   {
     const auto& p = m_world.Get(m_playerId);
     const float screenX = p.pos.x - camX;
@@ -651,7 +665,6 @@ void Game::Render(SDL_Renderer* r) const {
   }
 
   m_fields.Render(r, camX);
-  const float groundY = static_cast<float>(m_h - 40);
   const bool showAimGuide =
       m_started && m_rewindPoseLeft <= 0.0f && !m_lastInput.rewindHeld;
   m_bombs.Render(r, camX, groundY, m_world, m_world.Get(m_playerId), MouseWorldPos(m_lastInput), showAimGuide);
