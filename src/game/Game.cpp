@@ -19,6 +19,15 @@ constexpr float kRewindStaminaCost   = 3.0f;
 constexpr float kStageNotifyDuration = 3.0f;
 constexpr float kHitInvincibleTime   = 0.5f;
 
+// In-game HUD layout (1280x720 baseline; avoids bar/key/score overlap).
+constexpr int kHudMargin   = 12;
+constexpr int kHudBarW     = 200;
+constexpr int kHudBarH     = 10;
+constexpr int kHudBarGap   = 4;
+constexpr int kHudKeyStep  = 26;
+constexpr int kHudDistBarW = 210;
+constexpr float kClearFireworkInterval = 0.35f;
+
 } // namespace
 
 static SDL_Rect RectFromCircle(const Vec2& p, float r) {
@@ -494,6 +503,100 @@ void Game::CheckGameOver() {
   if (p.pos.y > static_cast<float>(m_h + 100)) m_gameOver = true;
 }
 
+void Game::EnterClearState() {
+  if (m_cleared) return;
+  m_cleared     = true;
+  m_distance    = kTotalMapLengthM;
+  m_scrollSpeed = 0.0f;
+  m_bombs.CancelCharge();
+  m_rewindQueued = false;
+
+  auto& p = m_world.Get(m_playerId);
+  p.vel.x = 0.0f;
+  p.vel.y = 0.0f;
+
+  for (int i = 0; i < 10; i++) {
+    const float sx = static_cast<float>(std::rand() % m_w);
+    const float sy = static_cast<float>(m_h) * 0.15f +
+                     static_cast<float>(std::rand() % static_cast<int>(m_h * 0.55f));
+    SpawnFireworkBurst(sx, sy);
+  }
+  m_fireworkCooldown = 0.15f;
+  m_clearPulse       = 0.0f;
+
+  for (int id : m_fallingIds) m_world.Get(id).active = false;
+}
+
+void Game::SpawnFireworkBurst(float screenX, float screenY) {
+  static const Uint8 palette[][3] = {
+      {255, 70, 70},  {255, 200, 50}, {90, 220, 255}, {180, 90, 255},
+      {80, 255, 130}, {255, 120, 200}, {255, 255, 255},
+  };
+  const int paletteN = static_cast<int>(sizeof(palette) / sizeof(palette[0]));
+  const int ci       = std::rand() % paletteN;
+  const Vec2 center{CameraX() + screenX, screenY};
+
+  for (int i = 0; i < 48; i++) {
+    Particle pt;
+    pt.pos     = center;
+    const float angle = static_cast<float>(std::rand() % 360) * 3.14159f / 180.0f;
+    const float speed = 100.0f + static_cast<float>(std::rand() % 220);
+    pt.vel     = {std::cos(angle) * speed, std::sin(angle) * speed - 80.0f};
+    pt.maxLife = 0.7f + static_cast<float>(std::rand() % 50) / 100.0f;
+    pt.life    = pt.maxLife;
+    pt.r       = palette[ci][0];
+    pt.g       = palette[ci][1];
+    pt.b       = palette[ci][2];
+    if (std::rand() % 4 == 0) {
+      const int cj = std::rand() % paletteN;
+      pt.r = palette[cj][0];
+      pt.g = palette[cj][1];
+      pt.b = palette[cj][2];
+    }
+    m_particles.push_back(pt);
+  }
+}
+
+void Game::UpdateClearCelebration(float dt) {
+  m_clearPulse += dt;
+  m_fireworkCooldown -= dt;
+  if (m_fireworkCooldown <= 0.0f) {
+    m_fireworkCooldown = kClearFireworkInterval;
+    const float sx = static_cast<float>(std::rand() % m_w);
+    const float sy = static_cast<float>(m_h) * 0.12f +
+                     static_cast<float>(std::rand() % static_cast<int>(m_h * 0.58f));
+    SpawnFireworkBurst(sx, sy);
+  }
+}
+
+void Game::ReturnToTitle() {
+  Restart();
+  m_started = false;
+  m_cleared = false;
+}
+
+void Game::DrawClearOverlay(SDL_Renderer* r) const {
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  SDL_SetRenderDrawColor(r, 0, 0, 0, 120);
+  SDL_Rect dim{0, 0, m_w, m_h};
+  SDL_RenderFillRect(r, &dim);
+
+  const float pulse = 0.85f + 0.15f * std::sin(m_clearPulse * 4.0f);
+  const Uint8 titleA = static_cast<Uint8>(std::clamp(pulse, 0.0f, 1.0f) * 255.0f);
+
+  m_ui.DrawCentered(r, m_w / 2, m_h / 2 - 56, "Clear!",
+                    SDL_Color{255, 220, 60, titleA});
+  m_ui.DrawCentered(r, m_w / 2, m_h / 2 - 20,
+                    (std::to_string(static_cast<int>(m_distance)) + "m · 2 Stages").c_str(),
+                    SDL_Color{220, 220, 230, 220});
+  m_ui.DrawCentered(r, m_w / 2, m_h / 2 + 12,
+                    ("Score: " + std::to_string(m_score)).c_str(),
+                    SDL_Color{255, 200, 80, 255});
+  m_ui.DrawCenteredBlink(r, m_w / 2, m_h / 2 + 52, "C : 타이틀로", SDL_Color{200, 200, 210, 255},
+                         m_uiBlinkPhase);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
 void Game::Restart() {
   m_gameOver               = false;
   m_distance               = 0.0f;
@@ -525,6 +628,9 @@ void Game::Restart() {
   m_glacierTransitionDone  = false;
   m_stageTransitionPlaying = false;
   m_stageTransitionT       = 0.0f;
+  m_cleared                = false;
+  m_fireworkCooldown       = 0.0f;
+  m_clearPulse             = 0.0f;
 
   auto& p = m_world.Get(m_playerId);
   p.pos = {140.0f, static_cast<float>(m_h - 80)};
@@ -650,6 +756,11 @@ void Game::HandleInput(float dt, Input& input) {
     return;
   }
 
+  if (m_cleared) {
+    m_lastInput = in;
+    return;
+  }
+
   if (in.pausePressed) {
     if (m_paused) m_quit = true;
     else m_paused = true;
@@ -682,7 +793,21 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   if (!m_started || m_paused) return;
 
   if (m_gameOver) {
-    if (inputDevice.ConsumeJumpPressForFixedStep() || input.jumpPressed) Restart();
+    if (inputDevice.ConsumeJumpPressForFixedStep() || input.jumpPressed || input.jumpHeld) Restart();
+    return;
+  }
+
+  if (m_cleared) {
+    UpdateClearCelebration(dt);
+    UpdateParticles(dt);
+    if (inputDevice.ConsumeJumpPressForFixedStep() || input.jumpPressed || input.jumpHeld) ReturnToTitle();
+    return;
+  }
+
+  if (m_distance >= kTotalMapLengthM) {
+    EnterClearState();
+    UpdateClearCelebration(dt);
+    UpdateParticles(dt);
     return;
   }
 
@@ -714,6 +839,11 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
         m_hp = std::min(1.0f, m_hp + 0.1f);
         m_particles.clear();
         m_popups.clear();
+        for (int id : m_fallingIds) m_world.Get(id).active = false;
+        for (auto& item : m_items) {
+          if (!item.collected) m_world.Get(item.bodyId).active = false;
+          item.collected = true;
+        }
         return;
       }
     }
@@ -794,31 +924,55 @@ void Game::DrawTitleOverlay(SDL_Renderer* r) const {
   SDL_Rect dim{0, 0, m_w, m_h};
   SDL_RenderFillRect(r, &dim);
 
-  const SDL_Rect panel{m_w / 2 - 260, m_h / 2 - 200, 520, 360};
+  const SDL_Color white{255, 255, 255, 255};
+  const SDL_Color body {210, 210, 220, 255};
+  const SDL_Color accent{120, 220, 255, 255};
+  const int line = m_ui.LineHeight();
+  const int rowStride = line + 10;
+
+  constexpr int kTopPad = 28;
+  constexpr int kBottomPad = 24;
+  constexpr int kTitleGap = 10;
+  constexpr int kSectionGap = 18;
+  constexpr int kControlLineCount = 6;
+  constexpr int kTextInsetX = 32;
+
+  const char* lines[] = {
+      "C : 점프",
+      "X 홀드 / 떼기 : 폭탄",
+      "마우스 : 폭탄 조준",
+      "Z : 시간 역행 (3초, 스태미나 3)",
+      "번개 = 스태미나 · 하트 = 체력 · 별 = 무적",
+      "Esc : 일시정지",
+  };
+
+  const int headerH = kTopPad + line + kTitleGap + line + kSectionGap;
+  const int controlsH = (kControlLineCount - 1) * rowStride + line;
+  const int panelH = headerH + controlsH + kBottomPad;
+
+  const SDL_Rect panel{m_w / 2 - 260, m_h / 2 - panelH / 2, 520, panelH};
   SDL_SetRenderDrawColor(r, 24, 24, 30, 245);
   SDL_RenderFillRect(r, &panel);
   SDL_SetRenderDrawColor(r, 110, 110, 130, 255);
   SDL_RenderDrawRect(r, &panel);
 
-  const SDL_Color white{255, 255, 255, 255};
-  const SDL_Color body {210, 210, 220, 255};
-  const SDL_Color accent{120, 220, 255, 255};
-  const int line = m_ui.LineHeight();
-  int y = panel.y + 24;
+  int y = panel.y + kTopPad;
+  m_ui.DrawCentered(r, m_w / 2, y, "Chrono Rush", white);
+  y += line + kTitleGap;
+  m_ui.DrawCentered(r, m_w / 2, y, "조작법", accent);
 
-  m_ui.DrawCentered(r, m_w / 2, y, "Chrono Rush", white);  y += line + 4;
-  m_ui.DrawCentered(r, m_w / 2, y, "조작법", accent);       y += line + 10;
+  const int controlsTop = panel.y + headerH;
+  const int controlsBottom = panel.y + panel.h - kBottomPad;
+  const int span = controlsBottom - controlsTop - line;
 
-  const char* lines[] = {
-      "C : 점프",
-      "X 홀드 / 떼기 : 폭탄 충전·발사 (폭발=블랙홀)",
-      "마우스 : 폭탄 조준 (점선 궤도)",
-      "Z : 시간 역행 (3초, 스태미나 3)",
-      "Esc : 일시정지",
-  };
-  for (const char* text : lines) { m_ui.Draw(r, panel.x + 28, y, text, body); y += line; }
+  for (int i = 0; i < kControlLineCount; i++) {
+    const int lineY = (kControlLineCount <= 1)
+                          ? controlsTop
+                          : controlsTop + (span * i) / (kControlLineCount - 1);
+    m_ui.Draw(r, panel.x + kTextInsetX, lineY, lines[i], body);
+  }
 
-  m_ui.DrawCenteredBlink(r, m_w / 2, panel.y + panel.h + 36,
+  m_ui.DrawCenteredBlink(r, m_w / 2, panel.y + panel.h + 24,
                          "SPACE를 눌러 시작하세요", white, m_uiBlinkPhase);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
@@ -904,12 +1058,6 @@ void Game::Render(SDL_Renderer* r) const {
     SDL_RenderFillRect(r, &fg);
     if (pressed) { SDL_SetRenderDrawColor(r, 255, 255, 255, 255); SDL_RenderDrawRect(r, &bg); }
   };
-
-  if (gameplayHud) {
-    drawKey(16, 34, m_lastInput.jumpHeld,   m_lastInput.jumpPressed,   {90,  220, 255, 255});
-    drawKey(42, 34, m_lastInput.throwHeld,  m_lastInput.throwPressed,  {255, 220, 80,  255});
-    drawKey(68, 34, m_lastInput.rewindHeld, m_lastInput.rewindPressed, {180, 80,  255, 255});
-  }
 
   // 플레이어 (깜빡임)
   {
@@ -1071,21 +1219,25 @@ void Game::Render(SDL_Renderer* r) const {
   }
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
-  if (gameplayHud) {
-    // 스태미나 바
-    const int barW = 240, barH = 12, x = 16, y = 16;
-    SDL_Rect bg{x, y, barW, barH};
-    SDL_SetRenderDrawColor(r, 40, 40, 48, 255);
-    SDL_RenderFillRect(r, &bg);
-    SDL_Rect fg{x, y, static_cast<int>((m_stamina / 3.0f) * barW), barH};
-    SDL_SetRenderDrawColor(r, 110, 255, 140, 255);
-    SDL_RenderFillRect(r, &fg);
+  if (gameplayHud && !m_cleared) {
+    const int leftX  = kHudMargin;
+    const int topY   = kHudMargin;
+    const int hpY    = topY + kHudBarH + kHudBarGap;
+    const int keysY  = hpY + kHudBarH + kHudBarGap + 6;
+    const int distX  = m_w - kHudMargin - kHudDistBarW;
 
-    // 체력 바
-    SDL_Rect hpBg{x, y + 16, barW, barH};
+    // 좌상: 스태미나 → 체력 (세로 스택)
+    SDL_Rect stamBg{leftX, topY, kHudBarW, kHudBarH};
+    SDL_SetRenderDrawColor(r, 40, 40, 48, 255);
+    SDL_RenderFillRect(r, &stamBg);
+    SDL_Rect stamFg{leftX, topY, static_cast<int>((m_stamina / 3.0f) * kHudBarW), kHudBarH};
+    SDL_SetRenderDrawColor(r, 110, 255, 140, 255);
+    SDL_RenderFillRect(r, &stamFg);
+
+    SDL_Rect hpBg{leftX, hpY, kHudBarW, kHudBarH};
     SDL_SetRenderDrawColor(r, 40, 40, 48, 255);
     SDL_RenderFillRect(r, &hpBg);
-    SDL_Rect hpFg{x, y + 16, static_cast<int>(m_hp * barW), barH};
+    SDL_Rect hpFg{leftX, hpY, static_cast<int>(m_hp * kHudBarW), kHudBarH};
     SDL_SetRenderDrawColor(r,
       static_cast<Uint8>(255 * (1.0f - m_hp)),
       static_cast<Uint8>(255 * m_hp), 60, 255);
@@ -1095,26 +1247,35 @@ void Game::Render(SDL_Renderer* r) const {
       SDL_RenderDrawRect(r, &hpBg);
     }
 
-    // 점수
-    m_ui.Draw(r, m_w / 2 - 60, 16,
-              ("Score: " + std::to_string(m_score)).c_str(),
-              SDL_Color{255, 220, 60, 255});
+    // 좌하(바 아래): C / X / Z 키 힌트
+    drawKey(leftX, keysY, m_lastInput.jumpHeld, m_lastInput.jumpPressed, {90, 220, 255, 255});
+    drawKey(leftX + kHudKeyStep, keysY, m_lastInput.throwHeld, m_lastInput.throwPressed, {255, 220, 80, 255});
+    drawKey(leftX + kHudKeyStep * 2, keysY, m_lastInput.rewindHeld, m_lastInput.rewindPressed,
+            {180, 80, 255, 255});
 
-    // 거리 바 + 숫자
-    SDL_Rect distBg{m_w - 260, 16, 244, 12};
+    // 상단 중앙: 점수 (좌·우 컬럼과 분리)
+    m_ui.DrawCentered(r, m_w / 2, topY,
+                      ("Score: " + std::to_string(m_score)).c_str(),
+                      SDL_Color{255, 220, 60, 255});
+
+    // 우상: 진행 거리 바 + 숫자 (체력 바와 같은 두 번째 줄)
+    SDL_Rect distBg{distX, topY, kHudDistBarW, kHudBarH};
     SDL_SetRenderDrawColor(r, 40, 40, 48, 255);
     SDL_RenderFillRect(r, &distBg);
-    SDL_Rect distFg{m_w - 260, 16, static_cast<int>(m_distance / 10.0f) % 244, 12};
+    const int distFillW = static_cast<int>(
+        std::clamp(m_distance / kTotalMapLengthM, 0.0f, 1.0f) * kHudDistBarW);
+    SDL_Rect distFg{distX, topY, distFillW, kHudBarH};
     SDL_SetRenderDrawColor(r, 255, 180, 60, 255);
     SDL_RenderFillRect(r, &distFg);
-    m_ui.Draw(r, m_w - 260, 32,
-              (std::to_string(static_cast<int>(m_distance)) + "m").c_str(),
-              SDL_Color{255, 180, 60, 255});
+    m_ui.DrawCentered(r, distX + kHudDistBarW / 2, hpY,
+                      (std::to_string(static_cast<int>(m_distance)) + "m").c_str(),
+                      SDL_Color{255, 180, 60, 255});
 
     DrawStageNotify(r);
   }
 
   if (!m_started)       DrawTitleOverlay(r);
+  else if (m_cleared)   DrawClearOverlay(r);
   else if (m_gameOver)  DrawGameOverOverlay(r);
   else if (m_paused)    DrawPauseOverlay(r);
 }

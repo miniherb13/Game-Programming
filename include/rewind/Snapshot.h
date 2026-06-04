@@ -19,7 +19,7 @@ class PhysicsWorld;
 struct GameSnapshot {
   static constexpr std::size_t kMaxBombs = 16;
   static constexpr std::size_t kMaxFields = static_cast<std::size_t>(GravityFieldTuning::maxFields);
-  static constexpr std::size_t kMaxProps = 32;
+  static constexpr std::size_t kMaxProps = 96;
 
   BodySnapshot player{};
   float jumpBuffer = 0.0f;

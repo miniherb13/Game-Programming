@@ -50,6 +50,9 @@ void GameSnapshot::Apply(PhysicsWorld& world,
   for (std::size_t i = 0; i < n; i++) {
     props[i].Load(world.Get(propIds[i]));
   }
+  for (std::size_t i = n; i < propIds.size(); i++) {
+    world.Get(propIds[i]).active = false;
+  }
 }
 
 } // namespace cr

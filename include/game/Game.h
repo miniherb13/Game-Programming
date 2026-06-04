@@ -118,6 +118,11 @@ private:
   void UpdateStageTransition(float dt);
   void DrawStageBackground(SDL_Renderer* r, float camX, float groundY, bool useGlacier) const;
   void DrawStageTransitionFade(SDL_Renderer* r) const;
+  void EnterClearState();
+  void UpdateClearCelebration(float dt);
+  void SpawnFireworkBurst(float screenX, float screenY);
+  void DrawClearOverlay(SDL_Renderer* r) const;
+  void ReturnToTitle();
 
   int m_w = 0;
   int m_h = 0;
@@ -194,6 +199,11 @@ private:
   bool  m_glacierTransitionDone  = false;
   bool  m_stageTransitionPlaying = false;
   float m_stageTransitionT       = 0.0f;
+
+  // 2스테이지(10km) 클리어 연출
+  bool  m_cleared           = false;
+  float m_fireworkCooldown  = 0.0f;
+  float m_clearPulse        = 0.0f;
 };
 
 } // namespace cr

@@ -77,22 +77,11 @@ void Input::Pump() {
           m_state.debugPressed = true;
           m_debugPending = true;
         }
-        if (e.key.keysym.scancode == SDL_SCANCODE_C ||
-            e.key.keysym.scancode == SDL_SCANCODE_X ||
-            e.key.keysym.scancode == SDL_SCANCODE_Z ||
-            e.key.keysym.scancode == SDL_SCANCODE_G) {
-          Log(LogLevel::Info, std::string("KEYDOWN scancode=") + std::to_string(static_cast<int>(e.key.keysym.scancode)));
-        }
         break;
       case SDL_KEYUP:
         if (e.key.keysym.scancode == SDL_SCANCODE_X) {
           m_state.throwReleased = true;
           m_throwReleasedPending = true;
-        }
-        if (e.key.keysym.scancode == SDL_SCANCODE_C ||
-            e.key.keysym.scancode == SDL_SCANCODE_X ||
-            e.key.keysym.scancode == SDL_SCANCODE_Z) {
-          Log(LogLevel::Info, std::string("KEYUP   scancode=") + std::to_string(static_cast<int>(e.key.keysym.scancode)));
         }
         break;
       case SDL_MOUSEMOTION:
