@@ -80,10 +80,23 @@ void Game::SpawnProps() {
 }
 
 void Game::UpdateSpawn() {
+  const float camLeft  = CameraX() - 200.0f;
   const float camRight = CameraX() + static_cast<float>(m_w) + 300.0f;
 
   m_spawnGap = std::max(60.0f, 110.0f - m_elapsed * 0.3f);
 
+  // 카메라 뒤로 벗어난 상자를 앞쪽으로 재배치 (풀링)
+  for (int id : m_propIds) {
+    auto& crate = m_world.Get(id);
+    if (!crate.active) continue;
+    if (crate.pos.x < camLeft) {
+      crate.pos = {m_nextSpawnX, static_cast<float>(m_h - 40) - 18.0f};
+      crate.vel = {0.0f, 0.0f};
+      m_nextSpawnX += m_spawnGap;
+    }
+  }
+
+  // 아직 부족하면 새로 생성
   while (m_nextSpawnX < camRight) {
     const float groundY = static_cast<float>(m_h - 40);
     const int id = m_world.CreateCircle(18.0f, {m_nextSpawnX, groundY - 18.0f}, 1.8f, false);
