@@ -18,7 +18,8 @@ Project/
   reply.py            # A 담당 — 키워드·LLM 답변 생성
   companion.py        # A 담당 — 메인 통합 루프
   test_motion.py      # A 담당 — motion 단독 테스트 (Pi live)
-  lcd_actuator.py     # B 담당 — LCD / 버저 / LED 출력
+  ultrasonic.py       # 초음파 거리 (효담 배선)
+  lcd_actuator.py     # B 담당 — LCD / 버저 / LED / 초음파 출력
   reference/
     ultrasonic_pet_robot.py   # 참고용 (초음파 예제, lab8 핀과 충돌 주의)
 ```
@@ -55,9 +56,32 @@ python3 companion.py
 2. 손 흔들기 — motion 감지 → LCD `Hi there!` + 버저
 3. 터미널에 질문 입력 → LCD 2줄에 답변 표시
 
+## 배선 (효담 회로 + 버저 추가, BCM 번호)
+
+| 부품 | BCM GPIO | 물리 핀 (Pi 4) | 연결 |
+|------|----------|----------------|------|
+| 초음파 TRIG | **16** | Pin 36 | Pi GPIO 16 |
+| 초음파 ECHO | **18** | Pin 12 | Pi GPIO 18 |
+| LED | **17** | Pin 11 | LED + 저항 → GND |
+| **버저 I/O** | **27** | Pin 13 | 버저 I/O (⚠️ **18번 금지** — ECHO와 충돌) |
+| 버저 VCC | — | Pin 1 (3.3V) | 버저 VCC |
+| 버저 GND | — | Pin 6 (GND) | 버저 GND |
+| LCD I2C SDA | 2 | Pin 3 | LCD SDA |
+| LCD I2C SCL | 3 | Pin 5 | LCD SCL |
+| LCD VCC/GND | — | Pin 2 / 6 | 5V / GND |
+
+- 초음파: VCC→5V(Pin 2), GND→GND, TRIG→16, ECHO→18
+- **버저는 반드시 GPIO 27** (lab8 버저 18번과 초음파 ECHO 충돌)
+- LCD 주소: `0x27` (`i2cdetect -y 1`로 확인)
+
+## 동작
+
+- **카메라 motion** 또는 **초음파 ≤ 20cm** → LCD `Hi there!` + LED ON + 버저
+- 대기 중 LCD 2줄에 거리(cm) 표시
+- 터미널 질문 → `reply.py` 답변 LCD 표시
+
 ## lab8 참고
 
-- `BUZZER_PIN = 18`, `LCD_ADDR = 0x27`
 - 촬영: `rpicam-still -n -t 1000 -o detect.jpg`
 - 기존 실습: `Iot/lab8/과제3_색깔감지/color_alert.py`
 

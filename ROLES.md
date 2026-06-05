@@ -38,13 +38,15 @@
 ### `config.py` (A 작성, 09:30 공유)
 
 ```python
-BUZZER_PIN = 18
-LED_PIN = None          # 사용 시 핀 번호, 없으면 None
+TRIG_PIN = 16
+ECHO_PIN = 18
+LED_PIN = 17
+BUZZER_PIN = 27       # 18은 ECHO와 충돌
 LCD_ENABLED = True
 LCD_ADDR = 0x27
-CAPTURE_PATH = "/home/사용자명/iot_lab8/detect.jpg"  # 각자 Pi 경로
+CAPTURE_PATH = "/home/사용자명/iot_lab8/detect.jpg"
 MOTION_THRESHOLD = 25
-CAPTURE_INTERVAL = 2.0
+ULTRASONIC_CLOSE_CM = 20
 ```
 
 ### `motion.py` (A)
@@ -58,8 +60,9 @@ def detect_motion(prev_bgr, curr_bgr, threshold=25) -> bool:
 
 ```python
 class Actuator:
-    def show_idle(self): ...           # "Companion Bot" / "Zzz..."
-    def show_motion(self): ...         # "Hi there!" + 버저 0.4초
+    def read_distance(self) -> float: ...
+    def show_idle(self, distance=None): ...
+    def show_motion(self, distance=None): ...  # LED + 버저 0.4초
     def show_reply(self, line1, line2): ...
     def close(self): ...
 ```

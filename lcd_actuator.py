@@ -1,10 +1,11 @@
-"""LCD / 버저 / LED 출력 — B 담당"""
+"""LCD / 버저 / LED / 초음파 — B 담당 (효담 배선 기준)."""
 
 import time
 
-from gpiozero import Buzzer, LED
+import RPi.GPIO as GPIO
 
-from config import BUZZER_PIN, LCD_ADDR, LCD_ENABLED, LED_PIN
+from config import BUZZER_PIN, ECHO_PIN, LCD_ADDR, LCD_ENABLED, LED_PIN, TRIG_PIN
+from ultrasonic import get_distance
 
 if LCD_ENABLED:
     from RPLCD.i2c import CharLCD
@@ -30,43 +31,58 @@ class LCD:
 
 class Actuator:
     def __init__(self):
-        self.buzzer = Buzzer(BUZZER_PIN)
-        self.led = LED(LED_PIN) if LED_PIN else None
+        GPIO.setwarnings(False)
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(TRIG_PIN, GPIO.OUT)
+        GPIO.setup(ECHO_PIN, GPIO.IN)
+        GPIO.setup(LED_PIN, GPIO.OUT)
+        GPIO.setup(BUZZER_PIN, GPIO.OUT)
+
+        GPIO.output(LED_PIN, GPIO.LOW)
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
+
         self.lcd = LCD(LCD_ADDR) if LCD_ENABLED else None
+
+    def read_distance(self) -> float:
+        return get_distance()
 
     def _lcd(self, line1, line2=""):
         print(f"[LCD] {line1} | {line2}")
         if self.lcd:
             self.lcd.show(line1, line2)
 
-    def show_idle(self):
-        if self.led:
-            self.led.off()
-        self.buzzer.off()
-        self._lcd("Companion Bot", "Zzz...")
+    def _led(self, on: bool):
+        GPIO.output(LED_PIN, GPIO.HIGH if on else GPIO.LOW)
 
-    def show_motion(self):
-        if self.led:
-            self.led.on()
-        self._lcd("Hi there!", "I see you!")
-        self.buzzer.on()
-        time.sleep(0.4)
-        self.buzzer.off()
+    def _buzzer_beep(self, seconds=0.4):
+        GPIO.output(BUZZER_PIN, GPIO.HIGH)
+        time.sleep(seconds)
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
+
+    def show_idle(self, distance=None):
+        self._led(False)
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
+        if distance is not None and distance >= 0:
+            self._lcd("Companion Bot", f"{distance} cm")
+        else:
+            self._lcd("Companion Bot", "Zzz...")
+
+    def show_motion(self, distance=None):
+        self._led(True)
+        line2 = f"{distance} cm" if distance is not None and distance >= 0 else "I see you!"
+        self._lcd("Hi there!", line2[:16])
+        self._buzzer_beep(0.4)
 
     def show_reply(self, line1, line2=""):
-        if self.led:
-            self.led.on()
+        self._led(True)
         self._lcd(line1, line2)
 
     def close(self):
-        self.buzzer.off()
-        if self.led:
-            self.led.off()
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
+        GPIO.output(LED_PIN, GPIO.LOW)
         if self.lcd:
             self.lcd.close()
-        self.buzzer.close()
-        if self.led:
-            self.led.close()
+        GPIO.cleanup((TRIG_PIN, ECHO_PIN, LED_PIN, BUZZER_PIN))
 
 
 if __name__ == "__main__":
@@ -74,7 +90,9 @@ if __name__ == "__main__":
     try:
         act.show_idle()
         time.sleep(2)
-        act.show_motion()
+        d = act.read_distance()
+        print(f"distance={d} cm")
+        act.show_motion(d)
         time.sleep(2)
         act.show_reply("Hello!", "How are you?")
         time.sleep(2)

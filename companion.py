@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""메인 통합 루프 — A 담당"""
+"""메인 통합 루프 — A 담당 (카메라 motion + 초음파 + 대화)."""
 
 import subprocess
 import threading
@@ -13,6 +13,7 @@ from config import (
     DEBUG_MOTION,
     MOTION_COOLDOWN,
     MOTION_THRESHOLD,
+    ULTRASONIC_CLOSE_CM,
 )
 from lcd_actuator import Actuator
 from motion import detect_motion, motion_score
@@ -43,6 +44,10 @@ def input_thread(act: Actuator, stop: threading.Event) -> None:
         act.show_reply(line1, line2)
 
 
+def is_close(distance: float) -> bool:
+    return distance != -1 and distance <= ULTRASONIC_CLOSE_CM
+
+
 def main() -> None:
     act = Actuator()
     stop = threading.Event()
@@ -54,10 +59,15 @@ def main() -> None:
 
     try:
         act.show_idle()
-        print("Companion bot running. Wave hand or type a question.")
+        print("Companion bot running.")
+        print("- Camera motion OR ultrasonic <=", ULTRASONIC_CLOSE_CM, "cm")
+        print("- Type a question in terminal")
         print("Ctrl+C to stop.\n")
 
         while True:
+            distance = act.read_distance()
+            print(f"[ultrasonic] {distance} cm")
+
             if not capture(CAPTURE_PATH):
                 time.sleep(CAPTURE_INTERVAL)
                 continue
@@ -68,17 +78,20 @@ def main() -> None:
                 time.sleep(CAPTURE_INTERVAL)
                 continue
 
+            camera_motion = prev is not None and detect_motion(prev, curr)
+            triggered = camera_motion or is_close(distance)
+
             now = time.monotonic()
-            if prev is not None and detect_motion(prev, curr):
-                if DEBUG_MOTION:
+            if triggered:
+                if DEBUG_MOTION and camera_motion:
                     score = motion_score(prev, curr)
                     print(f"[motion] score={score:.1f} threshold={MOTION_THRESHOLD}")
 
                 if now - last_motion_at >= MOTION_COOLDOWN:
-                    act.show_motion()
+                    act.show_motion(distance)
                     last_motion_at = now
             else:
-                act.show_idle()
+                act.show_idle(distance)
 
             prev = curr
             time.sleep(CAPTURE_INTERVAL)
