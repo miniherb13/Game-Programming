@@ -1,6 +1,6 @@
 # IoT 기말 프로젝트 — Motion-Adaptive AI Companion Robot
 
-**팀:** 박효담(202304709, 팀장·A) / 조현진(202304438, B)  
+**팀:** 조현진(202304438, A) / 박효담(202304709, 팀장·B)  
 **환경:** 둘 다 Raspberry Pi + PC 보유  
 **출력:** LCD + 버저 + LED (스피커/TTS 없음)  
 **입력:** 카메라(움직임) + 터미널 키보드(대화)
@@ -13,11 +13,11 @@
 Project/
   README.md           # 이 파일
   ROLES.md            # A/B 역할 분담 (필독)
-  config.py           # 공통 설정 (A가 관리)
-  motion.py           # B 담당 — 카메라 움직임 감지
-  lcd_actuator.py     # B 담당 — LCD / 버저 / LED 출력
+  config.py           # A 담당 — 공통 설정 (카메라·motion 포함)
+  motion.py           # A 담당 — 카메라 움직임 감지
   reply.py            # A 담당 — 키워드·LLM 답변 생성
   companion.py        # A 담당 — 메인 통합 루프
+  lcd_actuator.py     # B 담당 — LCD / 버저 / LED 출력
   reference/
     ultrasonic_pet_robot.py   # 참고용 (초음파 예제, lab8 핀과 충돌 주의)
 ```
@@ -28,12 +28,12 @@ Project/
 cd ~/Game-Programming/Project
 pip3 install RPLCD opencv-python-headless gpiozero --break-system-packages
 
-# B 모듈 단독 테스트
-python3 -c "from motion import detect_motion; import cv2; print('motion.py OK')"
-python3 lcd_actuator.py
-
 # A 모듈 단독 테스트
+python3 -c "from motion import detect_motion; import cv2; print('motion.py OK')"
 python3 -c "from reply import get_reply; print(get_reply('안녕'))"
+
+# B 모듈 단독 테스트
+python3 lcd_actuator.py
 
 # 통합 실행 (A)
 python3 companion.py

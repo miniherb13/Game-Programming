@@ -1,4 +1,4 @@
-"""카메라 움직임 감지 — B 담당"""
+"""카메라 움직임 감지 — A 담당"""
 
 import cv2
 import numpy as np

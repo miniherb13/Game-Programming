@@ -10,11 +10,11 @@
 | 파일 | 설명 | 담당 |
 |------|------|------|
 | `ROLES.md` | A/B 역할 분담 (필독) | 공통 |
-| `companion.py` | 메인 통합 루프 | A |
+| `config.py` | 공통 설정 (카메라·motion) | A (조현진) |
+| `motion.py` | 카메라 움직임 감지 | A |
 | `reply.py` | 키워드·LLM 답변 | A |
-| `config.py` | 공통 설정 | A |
-| `motion.py` | 움직임 감지 | B |
-| `lcd_actuator.py` | LCD / 버저 / LED | B |
+| `companion.py` | 메인 통합 루프 | A |
+| `lcd_actuator.py` | LCD / 버저 / LED | B (박효담, 팀장) |
 | `reference/` | 참고 코드 (초음파 예제 등) | 참고 |
 | `기말 프로젝트.txt` | 기획안 | 공통 |
 

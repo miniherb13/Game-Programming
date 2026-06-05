@@ -1,4 +1,4 @@
-"""공통 설정 — A가 관리. B는 pull만, CAPTURE_PATH만 각자 Pi에서 수정."""
+"""공통 설정 — A(조현진) 관리. B는 pull만, CAPTURE_PATH는 각자 Pi에서 로컬 수정."""
 
 BUZZER_PIN = 18
 LED_PIN = None  # LED 사용 시 GPIO 번호, 없으면 None
