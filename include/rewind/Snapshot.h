@@ -25,6 +25,7 @@ struct GameSnapshot {
   float jumpBuffer = 0.0f;
   float coyote = 0.0f;
   float stamina = 0.0f;
+  float hp = 1.0f;
 
   std::array<BombSlotSnapshot, kMaxBombs> bombs{};
   std::array<GravityFieldSnapshot, kMaxFields> fields{};
@@ -36,6 +37,7 @@ struct GameSnapshot {
                float jumpBuffer_,
                float coyote_,
                float stamina_,
+               float hp_,
                const BombSystem& bombs,
                const GravityFieldSystem& fields,
                const std::vector<int>& propIds);
@@ -45,6 +47,7 @@ struct GameSnapshot {
              float& jumpBuffer_,
              float& coyote_,
              float& stamina_,
+             float& hp_,
              BombSystem& bombs,
              GravityFieldSystem& fields,
              const std::vector<int>& propIds) const;

@@ -19,6 +19,7 @@ public:
   explicit PhysicsWorld(WorldBounds bounds);
 
   int CreateCircle(float radius, Vec2 pos, float mass, bool isStatic);
+  int CreateCircle(float radius, Vec2 pos, float mass, MotionType motion);
   Body& Get(int id) { return m_bodies.at(static_cast<std::size_t>(id)); }
   const Body& Get(int id) const { return m_bodies.at(static_cast<std::size_t>(id)); }
   const std::vector<Body>& Bodies() const { return m_bodies; }
@@ -30,6 +31,8 @@ public:
 private:
   void Integrate(Body& b, float dt);
   void SolveBounds(Body& b);
+  void SolveCircleCollisions();
+  static void ResolveCirclePair(Body& a, Body& b);
 
   WorldBounds m_bounds{};
   Vec2 m_gravity{0.0f, 1400.0f}; // screen-space: +y is down

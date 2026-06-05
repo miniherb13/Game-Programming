@@ -53,6 +53,9 @@ GravityFieldSnapshot GravityFieldSnapshot::Save(const FieldSlot& slot) {
   out.center = slot.center;
   out.radius = slot.radius;
   out.timeLeft = slot.timeLeft;
+  out.affectsPlayer = slot.affectsPlayer;
+  out.affectsBombs = slot.affectsBombs;
+  out.affectsProps = slot.affectsProps;
   return out;
 }
 
@@ -62,6 +65,9 @@ void GravityFieldSnapshot::Load(FieldSlot& slot) const {
   slot.center = center;
   slot.radius = radius;
   slot.timeLeft = timeLeft;
+  slot.affectsPlayer = affectsPlayer;
+  slot.affectsBombs = affectsBombs;
+  slot.affectsProps = affectsProps;
 }
 
 void GravityFieldSystem::SaveSnapshots(
@@ -89,6 +95,9 @@ void GravityFieldSystem::SpawnBlackHole(Vec2 center) {
   f.center = center;
   f.radius = GravityFieldTuning::explosionRadius;
   f.timeLeft = GravityFieldTuning::explosionDuration;
+  f.affectsPlayer = false;
+  f.affectsBombs = false;
+  f.affectsProps = false;
 }
 
 int GravityFieldSystem::AllocateSlot() const {
@@ -147,6 +156,9 @@ void GravityFieldSystem::ApplyForces(PhysicsWorld& world,
 
     for (const auto& field : m_slots) {
       if (!field.active) continue;
+      if (id == playerId && !field.affectsPlayer) continue;
+      if (body.kind == BodyKind::Bomb && !field.affectsBombs) continue;
+      if (body.kind == BodyKind::Obstacle && !field.affectsProps) continue;
       Vec2 f = ComputeForce(body.pos, field);
       // Airborne player rising: ignore downward pull (bomb + jump overlap, black holes).
       if (id == playerId && body.vel.y < -60.0f && f.y > 0.0f) {

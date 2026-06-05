@@ -13,6 +13,7 @@ void GameSnapshot::Capture(const PhysicsWorld& world,
                            float jumpBuffer_,
                            float coyote_,
                            float stamina_,
+                           float hp_,
                            const BombSystem& bombSystem,
                            const GravityFieldSystem& fieldSystem,
                            const std::vector<int>& propIds) {
@@ -20,6 +21,7 @@ void GameSnapshot::Capture(const PhysicsWorld& world,
   jumpBuffer = jumpBuffer_;
   coyote = coyote_;
   stamina = stamina_;
+  hp = hp_;
 
   bombSystem.SaveSnapshots(bombs, world);
   fieldSystem.SaveSnapshots(fields);
@@ -35,6 +37,7 @@ void GameSnapshot::Apply(PhysicsWorld& world,
                          float& jumpBuffer_,
                          float& coyote_,
                          float& stamina_,
+                         float& hp_,
                          BombSystem& bombSystem,
                          GravityFieldSystem& fieldSystem,
                          const std::vector<int>& propIds) const {
@@ -42,6 +45,7 @@ void GameSnapshot::Apply(PhysicsWorld& world,
   jumpBuffer_ = jumpBuffer;
   coyote_ = coyote;
   stamina_ = stamina;
+  hp_ = hp;
 
   bombSystem.LoadSnapshots(bombs, world);
   fieldSystem.LoadSnapshots(fields);

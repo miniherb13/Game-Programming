@@ -16,8 +16,15 @@ namespace {
 constexpr float kPlayerDisplayHeight = 82.0f;
 constexpr float kRewindPoseSeconds   = 1.0f;
 constexpr float kRewindStaminaCost   = 3.0f;
+constexpr float kRewindFxSeconds     = 1.0f; // 0.5s fade-in + 0.5s fade-out
+constexpr int   kRewindConvergeParticles = 36;
 constexpr float kStageNotifyDuration = 3.0f;
 constexpr float kHitInvincibleTime   = 0.5f;
+constexpr float kRewindInvincibleTime = 2.0f;
+constexpr float kRewindFreezeSeconds  = 0.5f;
+constexpr float kStartGraceSeconds    = 1.0f;
+constexpr float kItemMagnetRadius     = 110.0f;
+constexpr float kItemMagnetPullSpeed  = 95.0f;
 
 // In-game HUD layout (1280x720 baseline; avoids bar/key/score overlap).
 constexpr int kHudMargin   = 12;
@@ -44,15 +51,22 @@ float Game::CameraX() const {
   return p.pos.x - m_playerScreenX;
 }
 
+float Game::SpawnHorizonX() const {
+  return CameraX() + static_cast<float>(m_w) + 400.0f;
+}
+
 Game::Game(int width, int height)
     : m_w(width),
       m_h(height),
       m_world(WorldBounds{0.0f, static_cast<float>(width), static_cast<float>(height - 40), 0.0f}),
       m_rewind(180) {
-  m_playerId = m_world.CreateCircle(16.0f, {140.0f, static_cast<float>(height - 80)}, 1.0f, false);
+  m_playerId = m_world.CreateCircle(16.0f, {140.0f, static_cast<float>(height - 80)}, 1.0f,
+                                     MotionType::Kinematic);
   auto& p = m_world.Get(m_playerId);
+  p.kind          = BodyKind::Player;
   p.restitution   = 0.0f;
   p.linearDamping = 0.15f;
+  p.lockVelX      = true;
 
   m_bombs.InitPool(m_world);
   m_bombs.SetExplosionHandler([this](Vec2 center) {
@@ -82,7 +96,8 @@ Game::Game(int width, int height)
     }
   });
 
-  SpawnProps();
+  m_nextSpawnX = m_playerScreenX + static_cast<float>(width) + 400.0f;
+  m_nextItemX  = m_nextSpawnX;
 
   if (!m_playerSprite.Load())  Log(LogLevel::Error, "Failed to load assets/player/*.png");
   if (!m_stage.LoadMars())     Log(LogLevel::Warn,  "Mars stage assets missing");
@@ -120,6 +135,7 @@ void Game::SpawnPattern(float x, int pattern) {
     // 낮은 상자 (점프)
     const int id = m_world.CreateCircle(18.0f, {x, groundY - 18.0f}, 1.8f, false);
     auto& b = m_world.Get(id);
+    b.kind = BodyKind::Obstacle;
     b.restitution = 0.25f; b.linearDamping = 1.2f; b.groundFriction = 0.85f;
     addObs(id, ObstacleType::Normal);
 
@@ -127,6 +143,7 @@ void Game::SpawnPattern(float x, int pattern) {
     // 높은 상자 (폭탄)
     const int id = m_world.CreateCircle(36.0f, {x, groundY - 36.0f}, 1.8f, false);
     auto& b = m_world.Get(id);
+    b.kind = BodyKind::Obstacle;
     b.restitution = 0.1f; b.linearDamping = 1.5f; b.groundFriction = 0.9f;
     addObs(id, ObstacleType::Tall);
 
@@ -136,6 +153,7 @@ void Game::SpawnPattern(float x, int pattern) {
       const int id = m_world.CreateCircle(18.0f,
           {x + static_cast<float>(i) * 50.0f, groundY - 18.0f}, 1.8f, false);
       auto& b = m_world.Get(id);
+      b.kind = BodyKind::Obstacle;
       b.restitution = 0.25f; b.linearDamping = 1.2f; b.groundFriction = 0.85f;
       addObs(id, ObstacleType::Normal);
     }
@@ -144,11 +162,13 @@ void Game::SpawnPattern(float x, int pattern) {
     // 낮은 + 높은 조합
     const int id1 = m_world.CreateCircle(18.0f, {x, groundY - 18.0f}, 1.8f, false);
     auto& c1 = m_world.Get(id1);
+    c1.kind = BodyKind::Obstacle;
     c1.restitution = 0.25f; c1.linearDamping = 1.2f; c1.groundFriction = 0.85f;
     addObs(id1, ObstacleType::Normal);
 
     const int id2 = m_world.CreateCircle(36.0f, {x + 120.0f, groundY - 36.0f}, 1.8f, false);
     auto& c2 = m_world.Get(id2);
+    c2.kind = BodyKind::Obstacle;
     c2.restitution = 0.1f; c2.linearDamping = 1.5f; c2.groundFriction = 0.9f;
     addObs(id2, ObstacleType::Tall);
 
@@ -156,6 +176,7 @@ void Game::SpawnPattern(float x, int pattern) {
     // 튀어오르는 장애물
     const int id = m_world.CreateCircle(20.0f, {x, groundY - 20.0f}, 1.5f, false);
     auto& b = m_world.Get(id);
+    b.kind = BodyKind::Obstacle;
     b.restitution = 0.9f; b.linearDamping = 0.3f; b.groundFriction = 0.1f;
     b.vel.y = -300.0f;
     addObs(id, ObstacleType::Bounce);
@@ -164,6 +185,7 @@ void Game::SpawnPattern(float x, int pattern) {
     // 삼각형 가시 (Triangle) — 중반부터
     const int id = m_world.CreateCircle(22.0f, {x, groundY - 22.0f}, 1.8f, false);
     auto& b = m_world.Get(id);
+    b.kind = BodyKind::Obstacle;
     b.restitution = 0.1f; b.linearDamping = 2.0f; b.groundFriction = 0.95f;
     addObs(id, ObstacleType::Triangle);
 
@@ -171,6 +193,7 @@ void Game::SpawnPattern(float x, int pattern) {
     // 천장 가로막이 (Ceiling) — 점프하면 맞음, 숙여야 함
     const int id = m_world.CreateCircle(20.0f, {x, 80.0f}, 1.8f, true); // 천장에 고정
     auto& b = m_world.Get(id);
+    b.kind = BodyKind::Obstacle;
     b.restitution = 0.0f; b.linearDamping = 0.0f;
     Obstacle obs;
     obs.bodyId    = id;
@@ -184,7 +207,11 @@ void Game::SpawnPattern(float x, int pattern) {
     // 앞뒤로 움직이는 장애물 (Moving) — 후반부터
     const int id = m_world.CreateCircle(20.0f, {x, groundY - 20.0f}, 1.8f, false);
     auto& b = m_world.Get(id);
-    b.restitution = 0.2f; b.linearDamping = 0.0f; b.groundFriction = 0.0f;
+    b.kind          = BodyKind::Obstacle;
+    b.motion         = MotionType::Kinematic;
+    b.restitution    = 0.2f;
+    b.linearDamping  = 0.0f;
+    b.groundFriction = 0.0f;
     Obstacle obs;
     obs.bodyId      = id;
     obs.type        = ObstacleType::Moving;
@@ -200,6 +227,7 @@ void Game::SpawnFallingObstacle() {
   const float spawnX = player.pos.x + 400.0f + static_cast<float>(std::rand() % 200);
   const int id = m_world.CreateCircle(20.0f, {spawnX, -30.0f}, 1.5f, false);
   auto& crate = m_world.Get(id);
+  crate.kind = BodyKind::Obstacle;
   crate.restitution = 0.3f; crate.linearDamping = 0.2f; crate.groundFriction = 0.5f;
   m_fallingIds.push_back(id);
 }
@@ -255,7 +283,7 @@ void Game::UpdateParticles(float dt) {
     pt.life   -= dt;
     pt.pos.x  += pt.vel.x * dt;
     pt.pos.y  += pt.vel.y * dt;
-    pt.vel.y  += 400.0f * dt;
+    pt.vel.y  += pt.gravity * dt;
   }
   m_particles.erase(
     std::remove_if(m_particles.begin(), m_particles.end(),
@@ -369,6 +397,7 @@ void Game::DrawStar(SDL_Renderer* r, float cx, float cy, float size,
 void Game::SpawnItem(float x, ItemType type) {
   const float groundY = static_cast<float>(m_h - 40);
   const int id = m_world.CreateCircle(14.0f, {x, groundY - 80.0f}, 0.1f, true);
+  m_world.Get(id).kind = BodyKind::Item;
   Item item;
   item.bodyId    = id;
   item.type      = type;
@@ -376,10 +405,11 @@ void Game::SpawnItem(float x, ItemType type) {
   m_items.push_back(item);
 }
 
-void Game::UpdateItems() {
+void Game::UpdateItems(float dt) {
   const auto& p    = m_world.Get(m_playerId);
   const float camLeft = CameraX() - 200.0f;
   const float camX    = CameraX();
+  const float magnetRadiusSq = kItemMagnetRadius * kItemMagnetRadius;
 
   for (auto& item : m_items) {
     if (item.collected) continue;
@@ -389,7 +419,17 @@ void Game::UpdateItems() {
 
     const float dx = p.pos.x - body.pos.x;
     const float dy = p.pos.y - body.pos.y;
-    if (std::sqrt(dx * dx + dy * dy) < p.circle.radius + body.circle.radius + 8.0f) {
+    const float distSq = dx * dx + dy * dy;
+
+    const float dist = std::sqrt(distSq);
+    if (distSq < magnetRadiusSq && distSq > 4.0f) {
+      const float proximity = 1.0f - (dist / kItemMagnetRadius);
+      const float pull = kItemMagnetPullSpeed * proximity * proximity * dt;
+      body.pos.x += (dx / dist) * pull;
+      body.pos.y += (dy / dist) * pull;
+    }
+
+    if (dist < p.circle.radius + body.circle.radius + 8.0f) {
       item.collected = true;
       body.active    = false;
       const float sx = body.pos.x - camX;
@@ -415,7 +455,7 @@ void Game::UpdateItems() {
 }
 
 void Game::UpdateSpawn() {
-  const float camRight = CameraX() + static_cast<float>(m_w) + 400.0f;
+  const float camRight = SpawnHorizonX();
   m_spawnGap = std::max(80.0f, 200.0f - m_elapsed * 0.5f);
 
   // 난이도별 패턴 확장
@@ -456,6 +496,38 @@ void Game::UpdateSpawn() {
   }
 }
 
+void Game::ClampPlayerToGround() {
+  auto& p = m_world.Get(m_playerId);
+  const float floorY = static_cast<float>(m_h - 40) - p.circle.radius;
+  if (p.pos.y > floorY) {
+    p.pos.y = floorY;
+    if (p.vel.y > 0.0f) p.vel.y = 0.0f;
+    if (m_jumpGroundGrace <= 0.0f) p.onGround = true;
+  }
+}
+
+void Game::PreventPlayerObstacleClimb() {
+  auto& p = m_world.Get(m_playerId);
+  const float floorY = static_cast<float>(m_h - 40) - p.circle.radius;
+  for (const auto& obs : m_obstacles) {
+    const auto& body = m_world.Get(obs.bodyId);
+    if (!body.active) continue;
+    if (obs.type == ObstacleType::Ceiling) continue;
+
+    const float dx = p.pos.x - body.pos.x;
+    const float dy = p.pos.y - body.pos.y;
+    const float dist = std::sqrt(dx * dx + dy * dy);
+    const float minDist = p.circle.radius + body.circle.radius;
+    if (dist >= minDist || dist < 1e-5f) continue;
+
+    const float penetration = minDist - dist;
+    // Push down only — never touch X or the scroll lane freezes on contact.
+    if (p.pos.y <= body.pos.y + body.circle.radius * 0.35f) {
+      p.pos.y = std::min(p.pos.y + penetration * 0.9f, floorY);
+    }
+  }
+}
+
 void Game::CheckCollision() {
   const auto& p = m_world.Get(m_playerId);
   if (m_hitCooldown > 0.0f || m_shieldTimer > 0.0f) return;
@@ -466,7 +538,7 @@ void Game::CheckCollision() {
     const float dx   = p.pos.x - body.pos.x;
     const float dy   = p.pos.y - body.pos.y;
     const float dist = std::sqrt(dx * dx + dy * dy);
-    if (dist < p.circle.radius + body.circle.radius) {
+    if (dist < p.circle.radius + body.circle.radius + 4.0f) {
       float damage = 0.25f;
       if (obs.type == ObstacleType::Triangle) damage = 0.35f;
       if (obs.type == ObstacleType::Ceiling)  damage = 0.3f;
@@ -592,8 +664,8 @@ void Game::DrawClearOverlay(SDL_Renderer* r) const {
   m_ui.DrawCentered(r, m_w / 2, m_h / 2 + 12,
                     ("Score: " + std::to_string(m_score)).c_str(),
                     SDL_Color{255, 200, 80, 255});
-  m_ui.DrawCenteredBlink(r, m_w / 2, m_h / 2 + 52, "C : 타이틀로", SDL_Color{200, 200, 210, 255},
-                         m_uiBlinkPhase);
+  m_ui.DrawCenteredBlink(r, m_w / 2, m_h / 2 + 52, "SPACE : 재시작",
+                         SDL_Color{120, 220, 255, 255}, m_uiBlinkPhase);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
@@ -608,6 +680,7 @@ void Game::Restart() {
   m_coyote                 = 0.0f;
   m_rewindCooldownLeft     = 0.0f;
   m_rewindQueued           = false;
+  m_rewindFreezeLeft       = 0.0f;
   m_rewind                 = RewindBuffer(180);
   m_nextSpawnX             = 0.0f;
   m_spawnGap               = 200.0f;
@@ -631,6 +704,10 @@ void Game::Restart() {
   m_cleared                = false;
   m_fireworkCooldown       = 0.0f;
   m_clearPulse             = 0.0f;
+  m_rewindFxTimer          = 0.0f;
+  m_rewindVortexAngle      = 0.0f;
+  m_playerPosHistoryCount  = 0;
+  m_rewindGhosts.clear();
 
   auto& p = m_world.Get(m_playerId);
   p.pos = {140.0f, static_cast<float>(m_h - 80)};
@@ -650,7 +727,9 @@ void Game::Restart() {
   m_particles.clear();
   m_popups.clear();
 
-  SpawnProps();
+  m_nextSpawnX     = SpawnHorizonX();
+  m_nextItemX      = m_nextSpawnX;
+  m_startGraceLeft = kStartGraceSeconds;
 }
 
 Vec2 Game::MouseWorldPos(const InputState& input) const {
@@ -739,6 +818,184 @@ void Game::DrawHitEffect(SDL_Renderer* r) const {
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
+void Game::RecordPlayerPositionHistory(Vec2 pos) {
+  for (int i = static_cast<int>(m_playerPosHistory.size()) - 1; i > 0; --i) {
+    m_playerPosHistory[static_cast<std::size_t>(i)] = m_playerPosHistory[static_cast<std::size_t>(i - 1)];
+  }
+  m_playerPosHistory[0] = pos;
+  m_playerPosHistoryCount = std::min(m_playerPosHistoryCount + 1,
+                                     static_cast<int>(m_playerPosHistory.size()));
+}
+
+void Game::ResetPlayerPositionHistory(Vec2 pos) {
+  m_playerPosHistory.fill(pos);
+  m_playerPosHistoryCount = 1;
+}
+
+void Game::SpawnRewindVfx(Vec2 playerCenter) {
+  m_rewindFxTimer     = kRewindFxSeconds;
+  // Vortex should be screen-space centered.
+  m_rewindVortexCenter = playerCenter;
+  m_rewindVortexAngle  = 0.0f;
+  m_rewindGhosts.clear();
+  m_rewindGhosts.reserve(static_cast<std::size_t>(m_playerPosHistoryCount));
+
+  for (int i = 0; i < m_playerPosHistoryCount; ++i) {
+    RewindGhost ghost;
+    ghost.pos     = m_playerPosHistory[static_cast<std::size_t>(i)];
+    const float age01 = static_cast<float>(i) / std::max(1, m_playerPosHistoryCount - 1);
+    ghost.maxLife = kRewindFxSeconds * (0.55f + 0.35f * (1.0f - age01));
+    ghost.life    = ghost.maxLife;
+    m_rewindGhosts.push_back(ghost);
+  }
+  ResetPlayerPositionHistory(playerCenter);
+
+  for (int i = 0; i < kRewindConvergeParticles; ++i) {
+    Particle pt;
+    const float angle = static_cast<float>(std::rand() % 360) * 3.14159f / 180.0f;
+    const float dist  = 70.0f + static_cast<float>(std::rand() % 110);
+    pt.pos = {playerCenter.x + std::cos(angle) * dist,
+              playerCenter.y + std::sin(angle) * dist};
+
+    Vec2 toCenter = playerCenter - pt.pos;
+    const float len = toCenter.Len();
+    if (len > 1e-4f) toCenter = toCenter / len;
+    Vec2 tangent{-toCenter.y, toCenter.x};
+    const float spinDir = (std::rand() % 2 == 0) ? 1.0f : -1.0f;
+    const float speed = 220.0f + static_cast<float>(std::rand() % 160);
+    pt.vel     = toCenter * speed + tangent * (spinDir * (80.0f + static_cast<float>(std::rand() % 90)));
+    pt.gravity = 0.0f;
+    pt.maxLife = 0.45f + static_cast<float>(std::rand() % 25) / 100.0f;
+    pt.life    = pt.maxLife;
+    pt.r       = static_cast<Uint8>(90 + std::rand() % 70);
+    pt.g       = static_cast<Uint8>(150 + std::rand() % 80);
+    pt.b       = 255;
+    m_particles.push_back(pt);
+  }
+}
+
+void Game::UpdateRewindVfx(float dt) {
+  m_rewindFxTimer = std::max(0.0f, m_rewindFxTimer - dt);
+  if (m_rewindFxTimer > 0.0f) m_rewindVortexAngle += dt * 14.0f;
+  for (auto& ghost : m_rewindGhosts) {
+    if (ghost.life <= 0.0f) continue;
+    ghost.life = std::max(0.0f, ghost.life - dt);
+  }
+  m_rewindGhosts.erase(
+      std::remove_if(m_rewindGhosts.begin(), m_rewindGhosts.end(),
+                     [](const RewindGhost& g) { return g.life <= 0.0f; }),
+      m_rewindGhosts.end());
+}
+
+void Game::DrawRewindGhosts(SDL_Renderer* r, float camX) const {
+  if (m_rewindGhosts.empty()) return;
+
+  const auto& player = m_world.Get(m_playerId);
+  const float radius = player.circle.radius * 0.92f;
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  for (const RewindGhost& ghost : m_rewindGhosts) {
+    if (ghost.life <= 0.0f || ghost.maxLife <= 0.0f) continue;
+    const float t = ghost.life / ghost.maxLife;
+    const Uint8 a = static_cast<Uint8>(std::clamp(t, 0.0f, 1.0f) * 150.0f);
+    SDL_SetRenderDrawColor(r, 120, 210, 255, a);
+    const float sx = ghost.pos.x - camX;
+    SDL_Rect rc = RectFromCircle({sx, ghost.pos.y}, radius);
+    SDL_RenderFillRect(r, &rc);
+    SDL_SetRenderDrawColor(r, 180, 120, 255, static_cast<Uint8>(a * 0.7f));
+    SDL_RenderDrawRect(r, &rc);
+  }
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+void Game::DrawRewindVortex(SDL_Renderer* r, float camX) const {
+  (void)camX;
+  if (m_rewindFxTimer <= 0.0f) return;
+
+  const float t = std::clamp(m_rewindFxTimer / kRewindFxSeconds, 0.0f, 1.0f);
+  const float cx = static_cast<float>(m_w) * 0.5f;
+  const float cy = static_cast<float>(m_h) * 0.5f;
+  constexpr float kPi = 3.14159265f;
+  const float maxR = std::sqrt(static_cast<float>(m_w * m_w + m_h * m_h)) * 2.4f;
+
+  // 0.5s fade-in, 0.5s fade-out.
+  float fade = 0.0f;
+  if (t < 0.5f) fade = t / 0.5f;
+  else fade = (1.0f - t) / 0.5f;
+  fade = std::clamp(fade, 0.0f, 1.0f);
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+
+  // Darken the screen slightly to boost contrast.
+  const Uint8 dimA = static_cast<Uint8>(fade * 120.0f);
+  SDL_SetRenderDrawColor(r, 0, 0, 0, dimA);
+  SDL_Rect full{0, 0, m_w, m_h};
+  SDL_RenderFillRect(r, &full);
+
+  constexpr int kArms = 6;
+  constexpr int kSegments = 80;
+  for (int arm = 0; arm < kArms; ++arm) {
+    const float armBase = static_cast<float>(arm) * (2.0f * kPi / static_cast<float>(kArms));
+    for (int s = 0; s < kSegments; ++s) {
+      const float u0 = static_cast<float>(s) / static_cast<float>(kSegments);
+      const float u1 = static_cast<float>(s + 1) / static_cast<float>(kSegments);
+      const float r0 = 8.0f + u0 * maxR;
+      const float r1 = 8.0f + u1 * maxR;
+      const float a0 = armBase + m_rewindVortexAngle + u0 * 8.0f * kPi;
+      const float a1 = armBase + m_rewindVortexAngle + u1 * 8.0f * kPi;
+      const Uint8 a = static_cast<Uint8>(fade * (1.0f - u0) * 255.0f);
+      // Thick line: draw 3 parallel lines.
+      for (int oy = -1; oy <= 1; ++oy) {
+        SDL_SetRenderDrawColor(r, 255, 255, 255, static_cast<Uint8>(a * 0.35f));
+        SDL_RenderDrawLine(r,
+                           static_cast<int>(cx + std::cos(a0) * r0),
+                           static_cast<int>(cy + std::sin(a0) * r0) + oy,
+                           static_cast<int>(cx + std::cos(a1) * r1),
+                           static_cast<int>(cy + std::sin(a1) * r1) + oy);
+        SDL_SetRenderDrawColor(r, 60, 190, 255, a);
+        SDL_RenderDrawLine(r,
+                           static_cast<int>(cx + std::cos(a0) * r0),
+                           static_cast<int>(cy + std::sin(a0) * r0) + oy,
+                           static_cast<int>(cx + std::cos(a1) * r1),
+                           static_cast<int>(cy + std::sin(a1) * r1) + oy);
+      }
+    }
+  }
+
+  const Uint8 coreA = static_cast<Uint8>(fade * 255.0f);
+  SDL_SetRenderDrawColor(r, 190, 120, 255, coreA);
+  SDL_Rect core = RectFromCircle({cx, cy}, 44.0f * fade + 14.0f);
+  SDL_RenderFillRect(r, &core);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+void Game::DrawRewindScreenFx(SDL_Renderer* r) const {
+  if (m_rewindFxTimer <= 0.0f) return;
+
+  const float t = std::clamp(m_rewindFxTimer / kRewindFxSeconds, 0.0f, 1.0f);
+  const float ease = t * t;
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+
+  const Uint8 tintA = static_cast<Uint8>(ease * 72.0f);
+  SDL_SetRenderDrawColor(r, 40, 120, 220, tintA);
+  SDL_Rect full{0, 0, m_w, m_h};
+  SDL_RenderFillRect(r, &full);
+
+  const Uint8 edgeA = static_cast<Uint8>(ease * 130.0f);
+  SDL_SetRenderDrawColor(r, 8, 10, 28, edgeA);
+  constexpr int band = 72;
+  SDL_Rect top{0, 0, m_w, band};
+  SDL_Rect bottom{0, m_h - band, m_w, band};
+  SDL_Rect left{0, 0, band, m_h};
+  SDL_Rect right{m_w - band, 0, band, m_h};
+  SDL_RenderFillRect(r, &top);
+  SDL_RenderFillRect(r, &bottom);
+  SDL_RenderFillRect(r, &left);
+  SDL_RenderFillRect(r, &right);
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
 void Game::HandleInput(float dt, Input& input) {
   const InputState& in = input.State();
   m_uiBlinkPhase += dt;
@@ -749,6 +1006,9 @@ void Game::HandleInput(float dt, Input& input) {
   if (!m_started) {
     if (in.resumePressed) {
       m_started          = true;
+      m_startGraceLeft   = kStartGraceSeconds;
+      m_nextSpawnX       = SpawnHorizonX();
+      m_nextItemX        = m_nextSpawnX;
       m_stageNotifyNum   = 1;
       m_stageNotifyTimer = kStageNotifyDuration;
     }
@@ -774,8 +1034,7 @@ void Game::HandleInput(float dt, Input& input) {
       m_throwReleasePoseLeft = 0.0f;
       m_jumpBuffer = 0.0f;
       if (m_rewindCooldownLeft <= 0.0f && m_stamina >= kRewindStaminaCost) {
-        m_rewindQueued   = true;
-        m_rewindPoseLeft = kRewindPoseSeconds;
+        m_rewindQueued = true;
       }
       input.ConsumeRewindPending();
     } else {
@@ -800,13 +1059,25 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   if (m_cleared) {
     UpdateClearCelebration(dt);
     UpdateParticles(dt);
-    if (inputDevice.ConsumeJumpPressForFixedStep() || input.jumpPressed || input.jumpHeld) ReturnToTitle();
+    if (input.resumePressed) ReturnToTitle();
     return;
   }
 
   if (m_distance >= kTotalMapLengthM) {
     EnterClearState();
     UpdateClearCelebration(dt);
+    UpdateParticles(dt);
+    return;
+  }
+
+  UpdateRewindVfx(dt);
+
+  if (m_rewindFreezeLeft > 0.0f) {
+    m_rewindFreezeLeft = std::max(0.0f, m_rewindFreezeLeft - dt);
+    // Prevent buffered jumps from firing when time resumes.
+    m_jumpBuffer = 0.0f;
+    m_coyote = 0.0f;
+    inputDevice.ClearGameplayPending();
     UpdateParticles(dt);
     return;
   }
@@ -819,6 +1090,7 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   m_hitEffectTimer     = std::max(0.0f, m_hitEffectTimer - dt);
 
   const bool rewindFrame = m_rewindQueued;
+  bool rewindSucceeded = false;
   if (m_rewindQueued) {
     m_rewindQueued = false;
     if (m_rewindCooldownLeft <= 0.0f && m_stamina >= kRewindStaminaCost &&
@@ -830,23 +1102,33 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
         any = true;
       }
       if (any) {
+        rewindSucceeded = true;
         const float staminaBeforeRewind = m_stamina;
         m_snapshotScratch.Apply(m_world, m_playerId, m_jumpBuffer, m_coyote,
-                                m_stamina, m_bombs, m_fields, m_propIds);
+                                m_stamina, m_hp, m_bombs, m_fields, m_propIds);
         m_stamina = std::max(0.0f, staminaBeforeRewind - kRewindStaminaCost);
         m_rewindCooldownLeft = kRewindStaminaCost;
         m_rewindPoseLeft     = kRewindPoseSeconds;
         m_hp = std::min(1.0f, m_hp + 0.1f);
-        m_particles.clear();
         m_popups.clear();
+        const auto& rewoundPlayer = m_world.Get(m_playerId);
+        SpawnRewindVfx(rewoundPlayer.pos);
+        // Invincible briefly after a successful rewind.
+        m_hitCooldown = kRewindInvincibleTime;
+        m_blinkTimer  = kRewindInvincibleTime;
+        m_rewindFreezeLeft = kRewindFreezeSeconds;
         for (int id : m_fallingIds) m_world.Get(id).active = false;
         for (auto& item : m_items) {
           if (!item.collected) m_world.Get(item.bodyId).active = false;
           item.collected = true;
         }
+        UpdateParticles(dt);
         return;
       }
     }
+  }
+  if (rewindFrame && !rewindSucceeded) {
+    m_rewindPoseLeft = 0.0f;
   }
 
   if (!rewindFrame && inputDevice.ConsumeJumpPressForFixedStep()) m_jumpBuffer = 0.12f;
@@ -854,7 +1136,7 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   m_jumpGroundGrace = std::max(0.0f, m_jumpGroundGrace - dt);
 
   m_snapshotScratch.Capture(m_world, m_playerId, m_jumpBuffer, m_coyote,
-                            m_stamina, m_bombs, m_fields, m_propIds);
+                            m_stamina, m_hp, m_bombs, m_fields, m_propIds);
   m_rewind.PushFrame(m_snapshotScratch);
 
   auto& p = m_world.Get(m_playerId);
@@ -874,19 +1156,32 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   const float laneXBeforeStep = p.pos.x;
   m_world.Step(dt);
   m_fields.FixedUpdate(dt);
-  m_bombs.FixedUpdate(dt, m_world, m_playerId);
+  std::vector<int> bombObstacleIds;
+  bombObstacleIds.reserve(m_obstacles.size() + m_fallingIds.size());
+  for (const auto& obs : m_obstacles) bombObstacleIds.push_back(obs.bodyId);
+  for (int id : m_fallingIds) bombObstacleIds.push_back(id);
+  m_bombs.FixedUpdate(dt, m_world, m_playerId, bombObstacleIds);
 
   p.pos.x = laneXBeforeStep + m_scrollSpeed * dt;
   p.vel.x = m_scrollSpeed;
+  PreventPlayerObstacleClimb();
+  ClampPlayerToGround();
 
   if (m_jumpGroundGrace > 0.0f) p.onGround = false;
   else if (p.onGround) { m_coyote = 0.10f; m_runAnimPhase += dt; }
   else m_coyote = std::max(0.0f, m_coyote - dt);
 
-  m_distance    += m_scrollSpeed * dt;
-  m_elapsed     += dt;
-  m_scrollSpeed  = 240.0f + m_elapsed * 1.5f;
-  m_score        = static_cast<int>(m_distance / 10.0f) + m_bombKillCount * 50;
+  if (m_startGraceLeft > 0.0f) {
+    m_startGraceLeft = std::max(0.0f, m_startGraceLeft - dt);
+  }
+  const bool inStartGrace = m_startGraceLeft > 0.0f;
+
+  if (!inStartGrace) {
+    m_distance    += m_scrollSpeed * dt;
+    m_elapsed     += dt;
+    m_scrollSpeed  = 240.0f + m_elapsed * 1.5f;
+  }
+  m_score = static_cast<int>(m_distance / 10.0f) + m_bombKillCount * 50;
 
   if (!m_stage2Notified && m_distance >= kGlacierStageStartM) {
     m_stage2Notified   = true;
@@ -908,14 +1203,16 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
     }
   }
 
+  // Spawn ahead at the map horizon even during start grace so obstacles approach naturally.
   UpdateSpawn();
   UpdateFallingObstacles();
   UpdateObstacles(dt);
-  UpdateItems();
+  UpdateItems(dt);
   UpdateParticles(dt);
   UpdatePopups(dt);
   CheckCollision();
   CheckGameOver();
+  RecordPlayerPositionHistory(p.pos);
 }
 
 void Game::DrawTitleOverlay(SDL_Renderer* r) const {
@@ -1058,6 +1355,9 @@ void Game::Render(SDL_Renderer* r) const {
     SDL_RenderFillRect(r, &fg);
     if (pressed) { SDL_SetRenderDrawColor(r, 255, 255, 255, 255); SDL_RenderDrawRect(r, &bg); }
   };
+
+  DrawRewindGhosts(r, camX);
+  DrawRewindVortex(r, camX);
 
   // 플레이어 (깜빡임)
   {
@@ -1207,6 +1507,7 @@ void Game::Render(SDL_Renderer* r) const {
                  MouseWorldPos(m_lastInput), showAimGuide);
 
   DrawStageTransitionFade(r);
+  DrawRewindScreenFx(r);
   DrawHitEffect(r);
 
   // 팝업 텍스트

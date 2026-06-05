@@ -10,6 +10,7 @@
 #include "render/UiText.h"
 #include "rewind/RewindBuffer.h"
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -55,7 +56,15 @@ struct Particle {
   Vec2  vel{};
   float life    = 0.0f;
   float maxLife = 0.0f;
+  float gravity = 400.0f;
   Uint8 r = 255, g = 255, b = 255;
+};
+
+// 역행 잔상 (플레이어 위치만)
+struct RewindGhost {
+  Vec2  pos{};
+  float life    = 0.0f;
+  float maxLife = 0.0f;
 };
 
 // 텍스트 팝업
@@ -96,7 +105,7 @@ private:
   void UpdateFallingObstacles();
   void UpdateObstacles(float dt);
   void SpawnItem(float x, ItemType type);
-  void UpdateItems();
+  void UpdateItems(float dt);
   void SpawnParticles(Vec2 center, int count, Uint8 r, Uint8 g, Uint8 b);
   void UpdateParticles(float dt);
   void AddPopup(const std::string& text, float x, float y, Uint8 r, Uint8 g, Uint8 b);
@@ -107,14 +116,24 @@ private:
   void DrawStar(SDL_Renderer* r, float cx, float cy, float size, Uint8 rr, Uint8 gg, Uint8 bb) const;
   void CheckGameOver();
   void CheckCollision();
+  void PreventPlayerObstacleClimb();
+  void ClampPlayerToGround();
   void Restart();
   float CameraX() const;
+  float SpawnHorizonX() const;
   Vec2 MouseWorldPos(const InputState& input) const;
   void DrawTitleOverlay(SDL_Renderer* r) const;
   void DrawPauseOverlay(SDL_Renderer* r) const;
   void DrawGameOverOverlay(SDL_Renderer* r) const;
   void DrawStageNotify(SDL_Renderer* r) const;
   void DrawHitEffect(SDL_Renderer* r) const;
+  void RecordPlayerPositionHistory(Vec2 pos);
+  void ResetPlayerPositionHistory(Vec2 pos);
+  void SpawnRewindVfx(Vec2 playerCenter);
+  void UpdateRewindVfx(float dt);
+  void DrawRewindGhosts(SDL_Renderer* r, float camX) const;
+  void DrawRewindVortex(SDL_Renderer* r, float camX) const;
+  void DrawRewindScreenFx(SDL_Renderer* r) const;
   void UpdateStageTransition(float dt);
   void DrawStageBackground(SDL_Renderer* r, float camX, float groundY, bool useGlacier) const;
   void DrawStageTransitionFade(SDL_Renderer* r) const;
@@ -157,6 +176,13 @@ private:
   float m_rewindPoseLeft       = 0.0f;
   bool  m_rewindQueued         = false;
   float m_rewindCooldownLeft   = 0.0f;
+  float m_rewindFreezeLeft     = 0.0f;
+  float m_rewindFxTimer        = 0.0f;
+  float m_rewindVortexAngle    = 0.0f;
+  Vec2  m_rewindVortexCenter{};
+  std::array<Vec2, 5> m_playerPosHistory{};
+  int m_playerPosHistoryCount  = 0;
+  std::vector<RewindGhost>     m_rewindGhosts;
 
   RewindBuffer  m_rewind;
   GameSnapshot  m_snapshotScratch{};
@@ -167,6 +193,7 @@ private:
   // B 담당
   float m_distance    = 0.0f;
   float m_elapsed     = 0.0f;
+  float m_startGraceLeft = 0.0f;
   bool  m_gameOver    = false;
   float m_hp          = 1.0f;
   float m_hitCooldown = 0.0f;

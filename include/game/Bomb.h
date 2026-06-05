@@ -40,8 +40,8 @@ struct BombTuning {
 
   static constexpr float radius = 12.0f;
   static constexpr float mass = 0.55f;
-  static constexpr float restitution = 0.78f;
-  static constexpr float linearDamping = 0.0f;
+  static constexpr float restitution = 0.32f;
+  static constexpr float linearDamping = 0.25f;
   static constexpr float groundFriction = 0.22f;
 
   static constexpr float fuseSeconds = 6.5f;
@@ -83,7 +83,8 @@ public:
   bool IsAiming(const InputState& input) const;
 
   void UpdateThrow(float dt, const InputState& input, Vec2 mouseWorld, PhysicsWorld& world, const Body& player);
-  void FixedUpdate(float dt, PhysicsWorld& world, int playerId);
+  void FixedUpdate(float dt, PhysicsWorld& world, int playerId,
+                   const std::vector<int>& obstacleBodyIds);
 
   float Charge01() const;
   bool IsCharging() const { return m_charging; }

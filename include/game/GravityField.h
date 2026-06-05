@@ -33,6 +33,9 @@ struct FieldSlot {
   Vec2 center{};
   float radius = GravityFieldTuning::explosionRadius;
   float timeLeft = 0.0f;
+  bool affectsPlayer = true;
+  bool affectsBombs = true;
+  bool affectsProps = true;
 };
 
 struct GravityFieldSnapshot {
@@ -41,6 +44,9 @@ struct GravityFieldSnapshot {
   Vec2 center{};
   float radius = 0.0f;
   float timeLeft = 0.0f;
+  bool affectsPlayer = true;
+  bool affectsBombs = true;
+  bool affectsProps = true;
 
   static GravityFieldSnapshot Save(const FieldSlot& slot);
   void Load(FieldSlot& slot) const;

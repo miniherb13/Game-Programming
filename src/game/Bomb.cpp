@@ -99,6 +99,7 @@ void BombSystem::InitPool(PhysicsWorld& world) {
         world.CreateCircle(BombTuning::radius, {}, BombTuning::mass, false);
     auto& b = world.Get(id);
     b.active = false;
+    b.kind = BodyKind::Bomb;
     b.restitution = BombTuning::restitution;
     b.linearDamping = BombTuning::linearDamping;
     b.groundFriction = BombTuning::groundFriction;
@@ -293,11 +294,13 @@ void BombSystem::ApplyExplosionImpulse(PhysicsWorld& world,
                                        Vec2 center,
                                        float radius,
                                        float impulse) {
+  (void)playerId;
   const float radiusSq = radius * radius;
 
   const auto applyTo = [&](int id) {
     auto& body = world.Get(id);
     if (!body.active || body.invMass <= 0.0f) return;
+    if (body.kind == BodyKind::Bomb) return;
 
     const Vec2 delta = body.pos - center;
     const float distSq = delta.LenSq();
@@ -309,7 +312,8 @@ void BombSystem::ApplyExplosionImpulse(PhysicsWorld& world,
     body.vel += dir * (impulse * falloff);
   };
 
-  applyTo(playerId);
+  // Do not apply physical knockback to the player.
+  // (It reads as an unintended jump / jitter when throwing or exploding bombs.)
   for (int id : m_bodyIds) applyTo(id);
 }
 
@@ -334,7 +338,8 @@ void BombSystem::Explode(int slotIndex, PhysicsWorld& world, int playerId) {
   b.vel = {};
 }
 
-void BombSystem::FixedUpdate(float dt, PhysicsWorld& world, int playerId) {
+void BombSystem::FixedUpdate(float dt, PhysicsWorld& world, int playerId,
+                             const std::vector<int>& obstacleBodyIds) {
   for (std::size_t i = 0; i < m_slots.size(); i++) {
     auto& slot = m_slots[i];
 
@@ -352,15 +357,32 @@ void BombSystem::FixedUpdate(float dt, PhysicsWorld& world, int playerId) {
       continue;
     }
 
-    slot.fuseLeft -= dt;
-
-    const bool fuseExpired = slot.fuseLeft <= 0.0f;
-    const bool landedFromAir = !slot.wasOnGround && b.onGround;
+    bool hitObstacle = false;
+    for (int obstacleId : obstacleBodyIds) {
+      const auto& obstacle = world.Get(obstacleId);
+      if (!obstacle.active) continue;
+      const float dx = b.pos.x - obstacle.pos.x;
+      const float dy = b.pos.y - obstacle.pos.y;
+      const float dist = std::sqrt(dx * dx + dy * dy);
+      // Physics collision resolution may separate bodies before we get here,
+      // so allow a small contact margin to still count as a hit.
+      const float contact = b.circle.radius + obstacle.circle.radius + 3.0f;
+      if (dist <= contact) {
+        hitObstacle = true;
+        break;
+      }
+    }
 
     slot.wasOnGround = b.onGround;
     slot.prevVelY = b.vel.y;
 
-    if (fuseExpired || landedFromAir) {
+    if (hitObstacle) {
+      Explode(static_cast<int>(i), world, playerId);
+      continue;
+    }
+
+    slot.fuseLeft -= dt;
+    if (slot.fuseLeft <= 0.0f) {
       Explode(static_cast<int>(i), world, playerId);
     }
   }

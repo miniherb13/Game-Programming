@@ -4,16 +4,24 @@
 
 ## Build
 
+### Windows (권장)
+
+```powershell
+.\build.ps1
+```
+
+빌드 후 실행: `.\build.ps1 -Run` 또는 `build\chrono_rush_demo.exe` 더블클릭
+
+MSVC 경로(vcvars)를 자동 설정합니다. `build.cmd`도 동일합니다.
+
 ### Windows (Visual Studio)
 
 ```bash
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Debug
+cmake -S . -B build-vs -G "Visual Studio 17 2022" -A x64
+cmake --build build-vs --config Debug
 ```
 
-실행 파일은 보통 `build/Debug/chrono_rush_demo.exe`에 생성됩니다.
-
-### Windows (Ninja)
+### Windows (Ninja — Developer Shell)
 
 ```bash
 cmake -S . -B build -G Ninja
