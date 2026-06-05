@@ -63,15 +63,16 @@ python3 companion.py
 | 초음파 TRIG | **16** | Pin 36 | Pi GPIO 16 |
 | 초음파 ECHO | **18** | Pin 12 | Pi GPIO 18 |
 | LED | **17** | Pin 11 | LED + 저항 → GND |
-| **버저 I/O** | **27** | Pin 13 | 버저 I/O (⚠️ **18번 금지** — ECHO와 충돌) |
-| 버저 VCC | — | Pin 1 (3.3V) | 버저 VCC |
-| 버저 GND | — | Pin 6 (GND) | 버저 GND |
+| **버저 I/O** | **27** | Pin 13 | 버저 I/O (⚠️ **GPIO 18 금지** — ECHO와 충돌) |
+| 버저 VCC | — | Pin 1 또는 17 (3.3V) | 버저 VCC |
+| 버저 GND | — | **아무 GND 핀** | Pin 6·9·14·20·25·30·34·39 중 빈 곳 |
 | LCD I2C SDA | 2 | Pin 3 | LCD SDA |
 | LCD I2C SCL | 3 | Pin 5 | LCD SCL |
-| LCD VCC/GND | — | Pin 2 / 6 | 5V / GND |
+| LCD VCC/GND | — | Pin 2 / GND | 5V / GND (6번 말고 다른 GND도 OK) |
 
-- 초음파: VCC→5V(Pin 2), GND→GND, TRIG→16, ECHO→18
-- **버저는 반드시 GPIO 27** (lab8 버저 18번과 초음파 ECHO 충돌)
+- 초음파: VCC→5V, GND→GND, TRIG→16, ECHO→18
+- **버저 I/O는 반드시 GPIO 27** (GPIO 18은 초음파 ECHO 전용)
+- **GND·5V·3.3V는 핀이 여러 개** — 이미 6번 쓰 중이면 **9·14·20번 등 다른 GND** 사용
 - LCD 주소: `0x27` (`i2cdetect -y 1`로 확인)
 
 ## 동작
