@@ -50,10 +50,36 @@ python3 lcd_actuator.py
 python3 companion.py
 ```
 
+## VNC / SSH에서 실행 (시연용)
+
+Pi 터미널(VNC·SSH 동일)에서:
+
+```bash
+cd ~/Iot
+git pull origin Iot
+python3 companion.py
+```
+
+| 목적 | 명령 |
+|------|------|
+| **시연·통합 (메인)** | `python3 companion.py` |
+| LCD·버저·초음파만 | `python3 lcd_actuator.py` |
+| 카메라·motion만 | `python3 test_motion.py live` |
+
+종료: `Ctrl+C`
+
+### 버저 배선 (팀 확정)
+
+| 버저 선 | 물리 핀 |
+|---------|---------|
+| I/O | **13** (GPIO 27) |
+| VCC | **1** (3.3V) |
+| GND | **9** (다른 GND 핀도 가능) |
+
 ## 시연 시나리오 (3분)
 
-1. 대기 — LCD `Companion Bot` / `Zzz...`
-2. 손 흔들기 — motion 감지 → LCD `Hi there!` + 버저
+1. 대기 — LCD `Companion Bot` + 거리(cm)
+2. 손 흔들기 **또는** 20cm 이내 접근 → LCD `Hi there!` + LED + 버저
 3. 터미널에 질문 입력 → LCD 2줄에 답변 표시
 
 ## 배선 (효담 회로 + 버저 추가, BCM 번호)
