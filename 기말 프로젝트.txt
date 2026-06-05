@@ -1,0 +1,18 @@
+Dear Professor,
+This is Park hyodam(202304709), Cho hyunjin(202304438)
+we will work together as one team
+Our project title is : motion-Adaptive AI Companion Robot: LLM-based Emotional Interactive AIoT System
+The team captain is : Park hyodam(202304709)
+
+We will use the following resources/references:
+
+1. Offline AI Voice Assistant (Speech Recognition + LLM):
+https://github.com/risvn/voice-assistant
+2. Desktop Companion Robot Research:
+https://dl.acm.org/doi/10.1145/3613905.3651027
+3. Emotional Interaction Robot Research:
+https://dl.acm.org/doi/10.1145/3610978.3640564
+4. TensorFlow Lite Raspberry Pi AI Projects:*
+https://www.raspberrypi.com/news/raspberry-pi-ai-kit-projects/
+5. Affective Human-Robot Interaction (HRI) Design:
+https://dl.acm.org/doi/full/10.1145/3772318.3790830

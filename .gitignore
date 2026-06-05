@@ -1,0 +1,7 @@
+# 캐시
+__pycache__/
+*.pyc
+*.pyo
+
+# Pi 촬영 임시 파일
+detect.jpg

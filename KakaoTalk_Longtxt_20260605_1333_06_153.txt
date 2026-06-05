@@ -1,0 +1,110 @@
+import RPi.GPIO as GPIO
+import time
+from RPLCD.i2c import CharLCD
+
+# =====================
+# GPIO 설정
+# =====================
+TRIG = 16
+ECHO = 18
+LED = 17
+BUZZER = 27
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+
+GPIO.setup(TRIG, GPIO.OUT)
+GPIO.setup(ECHO, GPIO.IN)
+GPIO.setup(LED, GPIO.OUT)
+GPIO.setup(BUZZER, GPIO.OUT)
+
+# =====================
+# LCD 설정
+# 주소가 안 맞으면 0x27 -> 0x3f 로 바꿔보기
+# =====================
+lcd = CharLCD('PCF8574', 0x27)
+
+# =====================
+# 거리 측정 함수
+# =====================
+def get_distance():
+    GPIO.output(TRIG, False)
+    time.sleep(0.05)
+
+    GPIO.output(TRIG, True)
+    time.sleep(0.00001)
+    GPIO.output(TRIG, False)
+
+    start_time = time.time()
+    stop_time = time.time()
+
+    timeout = time.time() + 0.04
+
+    while GPIO.input(ECHO) == 0:
+        start_time = time.time()
+        if time.time() > timeout:
+            return -1
+
+    timeout = time.time() + 0.04
+
+    while GPIO.input(ECHO) == 1:
+        stop_time = time.time()
+        if time.time() > timeout:
+            return -1
+
+    elapsed = stop_time - start_time
+    distance = elapsed * 34300 / 2
+
+    return round(distance, 2)
+
+# =====================
+# LCD 출력 함수
+# =====================
+def show_lcd(line1, line2=""):
+    lcd.clear()
+    lcd.cursor_pos = (0, 0)
+    lcd.write_string(line1[:16])
+    lcd.cursor_pos = (1, 0)
+    lcd.write_string(line2[:16])
+
+# =====================
+# 메인 실행
+# =====================
+try:
+    show_lcd("PET ROBOT", "STARTING...")
+    time.sleep(2)
+
+    while True:
+        distance = get_distance()
+        print("Distance:", distance, "cm")
+
+        if distance == -1:
+            GPIO.output(LED, False)
+            GPIO.output(BUZZER, False)
+            show_lcd("SENSOR ERROR", "CHECK WIRE")
+
+        elif distance <= 20:
+            GPIO.output(LED, True)
+            GPIO.output(BUZZER, True)
+            show_lcd("TOO CLOSE!", f"{distance} cm")
+
+        elif distance <= 50:
+            GPIO.output(LED, True)
+            GPIO.output(BUZZER, False)
+            show_lcd("HELLO :)", f"{distance} cm")
+
+        else:
+            GPIO.output(LED, False)
+            GPIO.output(BUZZER, False)
+            show_lcd("WAITING...", f"{distance} cm")
+
+        time.sleep(0.5)
+
+except KeyboardInterrupt:
+    print("Program stopped")
+
+finally:
+    GPIO.output(LED, False)
+    GPIO.output(BUZZER, False)
+    lcd.clear()
+    GPIO.cleanup()
