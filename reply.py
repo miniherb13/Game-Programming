@@ -1,18 +1,18 @@
-"""키워드·LLM 답변 — A 담당. API 없으면 KEYWORD_REPLIES만 사용."""
+"""Keyword replies for LCD (English input for VNC)."""
 
 KEYWORD_REPLIES = {
-    "안녕": ("Hi!", "Nice to meet"),
     "hello": ("Hi!", "Nice to meet"),
-    "기분": ("I feel good!", "How about you?"),
+    "hi": ("Hi!", "Nice to meet"),
     "mood": ("I feel good!", "How about you?"),
-    "이름": ("I am Bot", "Your friend"),
+    "feel": ("I feel good!", "How about you?"),
     "name": ("I am Bot", "Your friend"),
-    "뭐해": ("Watching you!", "Say hello~"),
+    "who": ("I am Bot", "Your friend"),
     "what": ("Watching you!", "Say hello~"),
-    "고마워": ("You're welcome", "Anytime!"),
+    "doing": ("Watching you!", "Say hello~"),
     "thanks": ("You're welcome", "Anytime!"),
-    "잘자": ("Good night!", "Sweet dreams"),
+    "thank": ("You're welcome", "Anytime!"),
     "bye": ("See you!", "Take care~"),
+    "night": ("Good night!", "Sweet dreams"),
 }
 
 
@@ -24,7 +24,7 @@ def _split_two_lines(text: str) -> tuple[str, str]:
 
 
 def get_reply(user_text: str) -> tuple[str, str]:
-    """사용자 입력 → LCD용 (line1, line2), 각 16자 이내."""
+    """User text -> (line1, line2), max 16 chars each."""
     key = user_text.strip().lower()
     for keyword, reply in KEYWORD_REPLIES.items():
         if keyword in key:
@@ -35,7 +35,7 @@ def get_reply(user_text: str) -> tuple[str, str]:
 if __name__ == "__main__":
     while True:
         try:
-            q = input("질문: ").strip()
+            q = input("Question: ").strip()
         except (EOFError, KeyboardInterrupt):
             break
         if not q:

@@ -1,4 +1,4 @@
-"""초음파 거리 측정 — 효담 배선 (TRIG=16, ECHO=18)."""
+"""Ultrasonic distance (TRIG=16, ECHO=18)."""
 
 import time
 
@@ -8,7 +8,7 @@ from config import ECHO_PIN, TRIG_PIN
 
 
 def get_distance() -> float:
-    """cm 단위 거리. 센서 오류 시 -1."""
+    """Distance in cm. Returns -1 on sensor error."""
     GPIO.output(TRIG_PIN, False)
     time.sleep(0.05)
 

@@ -40,7 +40,7 @@ git pull origin Iot
 
 # A 모듈 단독 테스트
 python3 -c "from motion import detect_motion; import cv2; print('motion.py OK')"
-python3 -c "from reply import get_reply; print(get_reply('안녕'))"
+python3 -c "from reply import get_reply; print(get_reply('hello'))"
 python3 test_motion.py live          # Pi 카메라 — 2초마다 motion 출력
 
 # B 모듈 단독 테스트
@@ -80,7 +80,7 @@ python3 companion.py
 
 1. 대기 — LCD `Companion Bot` + 거리(cm)
 2. 손 흔들기 **또는** 20cm 이내 접근 → LCD `Hi there!` + LED + 버저
-3. 터미널에 질문 입력 → LCD 2줄에 답변 표시
+3. 터미널에 영어 질문 입력 (예: `hello`, `thanks`) → LCD 답변 표시
 
 ## 배선 (효담 회로 + 버저 추가, BCM 번호)
 

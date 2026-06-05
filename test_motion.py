@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Motion 단독 테스트 — A 담당.
+"""Motion-only test.
 
-Pi (카메라):
+Pi camera:
   python3 test_motion.py live
 
-PC (이미지 2장 비교):
+PC two images:
   python3 test_motion.py still prev.jpg curr.jpg
 """
 
@@ -27,7 +27,7 @@ def capture(path: str) -> None:
 
 def run_live() -> None:
     prev = None
-    print(f"Motion live test — threshold={MOTION_THRESHOLD}, interval={CAPTURE_INTERVAL}s")
+    print(f"Motion live test - threshold={MOTION_THRESHOLD}, interval={CAPTURE_INTERVAL}s")
     print("Ctrl+C to stop.\n")
     try:
         while True:
@@ -35,7 +35,7 @@ def run_live() -> None:
                 capture(CAPTURE_PATH)
             except (subprocess.CalledProcessError, FileNotFoundError) as e:
                 print(f"Capture failed: {e}")
-                print("Pi에서 rpicam-still 설치·카메라 연결을 확인하세요.")
+                print("Check rpicam-still and camera on Pi.")
                 break
 
             curr = cv2.imread(CAPTURE_PATH)

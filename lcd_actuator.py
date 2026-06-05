@@ -1,4 +1,4 @@
-"""LCD / 버저 / LED / 초음파 — B 담당 (효담 배선 기준)."""
+"""LCD, buzzer, LED, ultrasonic output."""
 
 import time
 

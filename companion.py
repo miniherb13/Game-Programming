@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""메인 통합 루프 — A 담당 (카메라 motion + 초음파 + 대화)."""
+"""Main loop: camera motion + ultrasonic + chat."""
 
 import subprocess
 import threading
@@ -35,7 +35,7 @@ def capture(path: str) -> bool:
 def input_thread(act: Actuator, stop: threading.Event) -> None:
     while not stop.is_set():
         try:
-            text = input("\n[대화] 질문 입력: ").strip()
+            text = input("\n[Chat] Type a question: ").strip()
         except EOFError:
             break
         if not text:
@@ -61,7 +61,7 @@ def main() -> None:
         act.show_idle()
         print("Companion bot running.")
         print("- Camera motion OR ultrasonic <=", ULTRASONIC_CLOSE_CM, "cm")
-        print("- Type a question in terminal")
+        print("- Type a question in terminal (English)")
         print("Ctrl+C to stop.\n")
 
         while True:
