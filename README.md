@@ -26,8 +26,16 @@ Project/
 ## 빠른 시작 (Pi)
 
 ```bash
-cd ~/Game-Programming/Project
+# 처음 한 번
+cd ~
+git clone -b Iot https://github.com/miniherb13/Game-Programming.git Iot
+cd ~/Iot
 pip3 install RPLCD opencv-python-headless gpiozero --break-system-packages
+mkdir -p ~/iot_lab8
+
+# 매번
+cd ~/Iot
+git pull origin Iot
 
 # A 모듈 단독 테스트
 python3 -c "from motion import detect_motion; import cv2; print('motion.py OK')"

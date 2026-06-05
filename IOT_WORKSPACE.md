@@ -31,11 +31,16 @@ git push origin Iot
 ## Pi에서 실행
 
 ```bash
-cd ~/.../Project
+# 처음: git clone -b Iot ... Iot  →  cd ~/Iot
+cd ~/Iot
+git pull origin Iot
 pip3 install RPLCD opencv-python-headless gpiozero --break-system-packages
-# config.py 의 CAPTURE_PATH 수정 후
+# config.py 의 CAPTURE_PATH → ~/iot_lab8/detect.jpg
+python3 test_motion.py live
 python3 companion.py
 ```
+
+> Git 루트 = `companion.py`가 있는 폴더. clone 시 `~/Iot`면 **`~/Iot/Project` 아님**.
 
 ## 상위 폴더 (`Iot/`)
 

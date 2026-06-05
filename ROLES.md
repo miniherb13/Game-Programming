@@ -83,7 +83,7 @@ def get_reply(user_text: str) -> tuple[str, str]:
 
 ### 09:00–09:30 · 둘 다 (카톡/줌 15분)
 
-- [ ] `Project/` 폴더 clone · `git checkout Iot`
+- [ ] Pi: `git clone -b Iot ... Iot` → `cd ~/Iot` (코드는 clone 루트에 있음)
 - [ ] `config.py` 값 확정 (A 작성 → B에게 push 알림)
 - [ ] 각자 Pi에서 lab8 하드웨어 확인 (A: 카메라, B: LCD·버저)
 
