@@ -2,23 +2,33 @@
 """메인 통합 루프 — A 담당"""
 
 import subprocess
-import sys
 import threading
 import time
 
 import cv2
 
-from config import CAPTURE_INTERVAL, CAPTURE_PATH
+from config import (
+    CAPTURE_INTERVAL,
+    CAPTURE_PATH,
+    DEBUG_MOTION,
+    MOTION_COOLDOWN,
+    MOTION_THRESHOLD,
+)
 from lcd_actuator import Actuator
-from motion import detect_motion
+from motion import detect_motion, motion_score
 from reply import get_reply
 
 
-def capture(path: str) -> None:
-    subprocess.run(
-        ["rpicam-still", "-n", "-t", "1000", "-o", path],
-        check=True,
-    )
+def capture(path: str) -> bool:
+    try:
+        subprocess.run(
+            ["rpicam-still", "-n", "-t", "1000", "-o", path],
+            check=True,
+        )
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"Capture failed: {e}")
+        return False
 
 
 def input_thread(act: Actuator, stop: threading.Event) -> None:
@@ -40,18 +50,33 @@ def main() -> None:
     t.start()
 
     prev = None
+    last_motion_at = 0.0
+
     try:
         act.show_idle()
+        print("Companion bot running. Wave hand or type a question.")
+        print("Ctrl+C to stop.\n")
+
         while True:
-            capture(CAPTURE_PATH)
+            if not capture(CAPTURE_PATH):
+                time.sleep(CAPTURE_INTERVAL)
+                continue
+
             curr = cv2.imread(CAPTURE_PATH)
             if curr is None:
                 print(f"Cannot read {CAPTURE_PATH}")
                 time.sleep(CAPTURE_INTERVAL)
                 continue
 
+            now = time.monotonic()
             if prev is not None and detect_motion(prev, curr):
-                act.show_motion()
+                if DEBUG_MOTION:
+                    score = motion_score(prev, curr)
+                    print(f"[motion] score={score:.1f} threshold={MOTION_THRESHOLD}")
+
+                if now - last_motion_at >= MOTION_COOLDOWN:
+                    act.show_motion()
+                    last_motion_at = now
             else:
                 act.show_idle()
 

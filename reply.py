@@ -8,9 +8,11 @@ KEYWORD_REPLIES = {
     "이름": ("I am Bot", "Your friend"),
     "name": ("I am Bot", "Your friend"),
     "뭐해": ("Watching you!", "Say hello~"),
+    "what": ("Watching you!", "Say hello~"),
     "고마워": ("You're welcome", "Anytime!"),
     "thanks": ("You're welcome", "Anytime!"),
     "잘자": ("Good night!", "Sweet dreams"),
+    "bye": ("See you!", "Take care~"),
 }
 
 

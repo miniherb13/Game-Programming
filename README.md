@@ -17,6 +17,7 @@ Project/
   motion.py           # A 담당 — 카메라 움직임 감지
   reply.py            # A 담당 — 키워드·LLM 답변 생성
   companion.py        # A 담당 — 메인 통합 루프
+  test_motion.py      # A 담당 — motion 단독 테스트 (Pi live)
   lcd_actuator.py     # B 담당 — LCD / 버저 / LED 출력
   reference/
     ultrasonic_pet_robot.py   # 참고용 (초음파 예제, lab8 핀과 충돌 주의)
@@ -31,6 +32,7 @@ pip3 install RPLCD opencv-python-headless gpiozero --break-system-packages
 # A 모듈 단독 테스트
 python3 -c "from motion import detect_motion; import cv2; print('motion.py OK')"
 python3 -c "from reply import get_reply; print(get_reply('안녕'))"
+python3 test_motion.py live          # Pi 카메라 — 2초마다 motion 출력
 
 # B 모듈 단독 테스트
 python3 lcd_actuator.py
