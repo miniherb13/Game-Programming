@@ -105,8 +105,9 @@ private:
                 std::vector<unsigned char>& rgba,
                 int& w,
                 int& h,
-                CropRect& outBounds) const;
-  bool LoadBank(SpriteBank& bank, const char* folder) const;
+                CropRect& outBounds,
+                bool heavyOutline = false) const;
+  bool LoadBank(SpriteBank& bank, const char* folder, bool heavyOutline = false) const;
   bool UploadRgba(SDL_Renderer* renderer, const unsigned char* rgba, int w, int h, SpriteTex& out) const;
   void EnsureBankUploaded(SDL_Renderer* renderer, SpriteBank& bank, ObstacleStage stage) const;
   static void BlitScaled(SDL_Renderer* renderer,

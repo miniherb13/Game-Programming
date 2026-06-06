@@ -14,6 +14,7 @@ void Input::BeginFrame() {
   m_state.rewindPressed = false;
   m_state.debugPressed = false;
   m_state.slowPressed  = false;
+  m_state.slowModeTogglePressed = false;
   m_state.pausePressed = false;
   m_state.resumePressed = false;
   m_state.throwReleased = false;
@@ -36,6 +37,8 @@ bool Input::ConsumeJumpPressForFixedStep() {
 void Input::FinishGameplayFrame(bool hadFixedStep) {
   if (hadFixedStep) {
     m_debugPending = false;
+    // Hold 모드에서 Shift pending이 남으면 H 전환 시 슬로우가 같이 켜짐
+    m_slowPending = false;
   }
 }
 
@@ -83,9 +86,13 @@ void Input::Pump() {
           m_state.debugPressed = true;
           m_debugPending = true;
         }
-        if (e.key.keysym.scancode == SDL_SCANCODE_F) {
+        if (e.key.keysym.scancode == SDL_SCANCODE_LSHIFT ||
+            e.key.keysym.scancode == SDL_SCANCODE_RSHIFT) {
           m_state.slowPressed = true;
           m_slowPending = true;
+        }
+        if (e.key.keysym.scancode == SDL_SCANCODE_H) {
+          m_state.slowModeTogglePressed = true;
         }
         break;
       case SDL_KEYUP:
@@ -120,7 +127,7 @@ void Input::Pump() {
   m_state.jumpHeld   = keys[SDL_SCANCODE_C] != 0;
   m_state.throwHeld  = keys[SDL_SCANCODE_X] != 0;
   m_state.rewindHeld = keys[SDL_SCANCODE_Z] != 0;
-  m_state.slowHeld   = keys[SDL_SCANCODE_F] != 0;
+  m_state.slowHeld   = keys[SDL_SCANCODE_LSHIFT] != 0 || keys[SDL_SCANCODE_RSHIFT] != 0;
 }
 
 } // namespace cr

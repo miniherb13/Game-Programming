@@ -24,6 +24,7 @@ struct GameSnapshot {
   BodySnapshot player{};
   float jumpBuffer = 0.0f;
   float coyote = 0.0f;
+  int airJumpsLeft = 0;
   float stamina = 0.0f;
   float hp = 1.0f;
 
@@ -36,6 +37,7 @@ struct GameSnapshot {
                int playerId,
                float jumpBuffer_,
                float coyote_,
+               int airJumpsLeft_,
                float stamina_,
                float hp_,
                const BombSystem& bombs,
@@ -46,6 +48,7 @@ struct GameSnapshot {
              int playerId,
              float& jumpBuffer_,
              float& coyote_,
+             int& airJumpsLeft_,
              float& stamina_,
              float& hp_,
              BombSystem& bombs,
