@@ -366,7 +366,7 @@ void BombSystem::FixedUpdate(float dt, PhysicsWorld& world, int playerId,
       const float dist = std::sqrt(dx * dx + dy * dy);
       // Physics collision resolution may separate bodies before we get here,
       // so allow a small contact margin to still count as a hit.
-      const float contact = b.circle.radius + obstacle.circle.radius + 3.0f;
+      const float contact = b.circle.radius + obstacle.circle.radius + 8.0f;
       if (dist <= contact) {
         hitObstacle = true;
         break;

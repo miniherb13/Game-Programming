@@ -74,13 +74,36 @@ Game::Game(int width, int height)
     for (auto& obs : m_obstacles) {
       auto& body = m_world.Get(obs.bodyId);
       if (!body.active) continue;
-      const float dx = body.pos.x - center.x;
-      const float dy = body.pos.y - center.y;
-      if (std::sqrt(dx * dx + dy * dy) < 120.0f) {
+      const float dx   = body.pos.x - center.x;
+      const float dy   = body.pos.y - center.y;
+      const float dist = std::sqrt(dx * dx + dy * dy);
+      if (dist < 95.0f) {
         SpawnParticles(body.pos, 12, 255, 160, 40);
-        body.active = false;
         m_score += 50;
         m_bombKillCount++;
+        if (dist < 60.0f) {
+          // 아주 가까우면 날아가다가 사라짐
+          const float force = 800.0f / (dist + 1.0f);
+          const float nx = dist > 0.0f ? dx / dist : 1.0f;
+          const float ny = dist > 0.0f ? dy / dist : 0.0f;
+          body.linearDamping = 0.1f;
+          body.groundFriction = 0.0f;
+          body.invMass = 1.0f / 1.8f;
+          body.vel.x += nx * force;
+          body.vel.y += ny * force - 200.0f;
+          // 1초 후 사라지게 타이머 설정 (obs에 저장)
+          obs.bounceTimer = -1.0f; // -1 = 날아가는 중
+        } else {
+          // 범위 안이지만 멀면 그냥 날아감
+          const float force = 400.0f / (dist + 1.0f);
+          body.linearDamping = 0.1f;
+          body.groundFriction = 0.0f;
+          const float nx = dist > 0.0f ? dx / dist : 1.0f;
+          body.invMass = 1.0f / 1.8f;
+          const float ny = dist > 0.0f ? dy / dist : 0.0f;
+          body.vel.x += nx * force;
+          body.vel.y += ny * force - 150.0f;
+        }
       }
     }
     for (int id : m_fallingIds) {
@@ -88,7 +111,7 @@ Game::Game(int width, int height)
       if (!crate.active) continue;
       const float dx = crate.pos.x - center.x;
       const float dy = crate.pos.y - center.y;
-      if (std::sqrt(dx * dx + dy * dy) < 120.0f) {
+      if (std::sqrt(dx * dx + dy * dy) < 95.0f) {
         SpawnParticles(crate.pos, 8, 150, 80, 220);
         crate.active = false;
         m_score += 30;
@@ -123,6 +146,8 @@ void Game::SpawnPattern(float x, int pattern) {
   const float groundY = static_cast<float>(m_h - 40);
 
   auto addObs = [&](int id, ObstacleType type) {
+    auto& b = m_world.Get(id);
+    b.motion = MotionType::Dynamic;
     Obstacle obs;
     obs.bodyId      = id;
     obs.type        = type;
@@ -259,6 +284,14 @@ void Game::UpdateObstacles(float dt) {
       // 사인파로 앞뒤 이동
       body.pos.x = obs.moveOriginX + std::sin(obs.moveTimer * 2.0f) * obs.moveRange;
       body.vel.x = 0.0f;
+    }
+    // 날아가는 상자 처리 (bounceTimer == -1)
+    if (obs.bounceTimer < 0.0f) {
+      obs.bounceTimer -= dt;
+      if (obs.bounceTimer < -1.5f) {
+        SpawnParticles(body.pos, 6, 255, 160, 40);
+        body.active = false;
+      }
     }
   }
 }
