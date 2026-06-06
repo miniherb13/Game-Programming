@@ -408,6 +408,7 @@ Game::Game(int width, int height)
   if (!m_stage.LoadMars())     Log(LogLevel::Warn,  "Mars stage assets missing");
   if (!m_glacier.Load())       Log(LogLevel::Warn,  "Glacier stage assets missing");
   if (!m_emerald.Load())       Log(LogLevel::Warn,  "Emerald stage assets missing");
+  LoadLeaderboard();
 }
 
 Game::~Game() {
@@ -990,6 +991,74 @@ void Game::DrawStar(SDL_Renderer* r, float cx, float cy, float size,
     SDL_RenderDrawLine(r, static_cast<int>(cx), static_cast<int>(cy), pts[i].x, pts[i].y);
   }
 }
+void Game::LoadLeaderboard() {
+  m_leaderboard.clear();
+  FILE* f = fopen("scores.txt", "r");
+  if (!f) return;
+  int score, distance, bombKills;
+  while (fscanf(f, "%d %d %d", &score, &distance, &bombKills) == 3) {
+    ScoreEntry entry;
+    entry.score     = score;
+    entry.distance  = distance;
+    entry.bombKills = bombKills;
+    m_leaderboard.push_back(entry);
+  }
+  fclose(f);
+}
+
+void Game::SaveLeaderboard() {
+  // 점수 내림차순 정렬
+  std::sort(m_leaderboard.begin(), m_leaderboard.end(),
+            [](const ScoreEntry& a, const ScoreEntry& b) {
+              return a.score > b.score;
+            });
+  // 상위 10개만 유지
+  if (m_leaderboard.size() > 10) {
+    m_leaderboard.resize(10);
+  }
+  FILE* f = fopen("scores.txt", "w");
+  if (!f) return;
+  for (const auto& entry : m_leaderboard) {
+    fprintf(f, "%d %d %d\n", entry.score, entry.distance, entry.bombKills);
+  }
+  fclose(f);
+}
+
+void Game::SubmitScore() {
+  if (m_scoreSubmitted) return;
+  m_scoreSubmitted = true;
+  ScoreEntry entry;
+  entry.score     = m_score;
+  entry.distance  = static_cast<int>(m_distance);
+  entry.bombKills = m_bombKillCount;
+  m_leaderboard.push_back(entry);
+  SaveLeaderboard();
+}
+
+void Game::DrawLeaderboard(SDL_Renderer* r) const {
+  if (m_leaderboard.empty()) return;
+
+  const int line = m_ui.LineHeight();
+  int y = m_h / 2 + 60;
+
+  m_ui.DrawCentered(r, m_w / 2, y, "[ TOP 10 ]", SDL_Color{255, 220, 60, 255});
+  y += line + 4;
+
+  for (int i = 0; i < static_cast<int>(m_leaderboard.size()) && i < 10; i++) {
+    const auto& entry = m_leaderboard[i];
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%d.  %d pts  %dm  x%d",
+                  i + 1, entry.score, entry.distance, entry.bombKills);
+
+    SDL_Color color{220, 220, 230, 255};
+    if (i == 0) color = {255, 220, 60, 255};  // 1등 금색
+    else if (i == 1) color = {200, 200, 210, 255}; // 2등 은색
+    else if (i == 2) color = {210, 140, 80, 255};  // 3등 동색
+
+    m_ui.DrawCentered(r, m_w / 2, y, buf, color);
+    y += line + 2;
+  }
+}
 void Game::SpawnItem(float x, ItemType type) {
   const float groundY = static_cast<float>(m_h - 40);
   const int id = m_world.CreateCircle(14.0f, {x, groundY - 80.0f}, 0.1f, true);
@@ -1203,6 +1272,7 @@ void Game::TriggerGameOver() {
   m_gameOver = true;
   m_fields.ClearAll();
   m_blackHoleParticleAcc = 0.0f;
+  SubmitScore();
 }
 
 void Game::EnterClearState() {
@@ -1325,6 +1395,7 @@ void Game::Restart() {
   m_hitEffectTimer         = 0.0f;
   m_score                  = 0;
   m_bombKillCount          = 0;
+  m_bombCooldown           = 0.0f;
   m_patternIndex           = 0;
   m_fallingSpawnTimer      = 0.0f;
   m_fallingSpawnInterval   = 8.0f;
@@ -1817,7 +1888,10 @@ void Game::HandleInput(float dt, Input& input) {
       input.ConsumeRewindPending();
     } else {
       if (m_bombs.IsCharging() && in.throwReleased) m_throwReleasePoseLeft = 0.35f;
-      m_bombs.UpdateThrow(dt, in, MouseWorldPos(in), m_world, p);
+      if (m_bombCooldown <= 0.0f) {
+        m_bombs.UpdateThrow(dt, in, MouseWorldPos(in), m_world, p);
+        if (in.throwReleased && !m_bombs.IsCharging()) m_bombCooldown = 2.0f;
+      }
       if (in.throwReleased) input.ConsumeThrowReleasedPending();
     }
     m_throwReleasePoseLeft = std::max(0.0f, m_throwReleasePoseLeft - dt);
@@ -1866,6 +1940,7 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   m_shieldTimer        = std::max(0.0f, m_shieldTimer - dt);
   m_stageNotifyTimer   = std::max(0.0f, m_stageNotifyTimer - dt);
   m_hitEffectTimer     = std::max(0.0f, m_hitEffectTimer - dt);
+  m_bombCooldown       = std::max(0.0f, m_bombCooldown - dt);
 // 슬로우모션 (F키 토글 — HandleInput에서 전환)
   if (m_slowActive) {
     m_staminaSlow = std::max(0.0f, m_staminaSlow - dt * kSlowStaminaDrainPerSec);
@@ -2293,6 +2368,8 @@ void Game::DrawGameOverOverlay(SDL_Renderer* r) const {
   m_ui.DrawCentered(r, m_w / 2, y,
       ("Bomb kills: " + std::to_string(m_bombKillCount)).c_str(), hint); y += line + 12;
   m_ui.DrawCentered(r, m_w / 2, y, "SPACE : 재시작", hint);
+
+  DrawLeaderboard(r);  
 
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }

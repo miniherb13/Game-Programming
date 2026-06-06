@@ -34,26 +34,25 @@ struct Item {
 };
 
 enum class ObstacleType {
-  Normal,       // 갈색 — 점프로 넘기
-  Tall,         // 빨간 — 폭탄으로 부수기
-  Bounce,       // 주황 — 튀어오르는 장애물
-  Spike,        // 하늘색 — 뾰족한 것 (더 많은 피해)
-  Triangle,     // 노랑 — 삼각형 가시
-  Ceiling,      // 보라 — 천장에서 내려오는 가로막이
-  Moving,       // 초록 — 앞뒤로 움직이는 장애물
+  Normal,
+  Tall,
+  Bounce,
+  Spike,
+  Triangle,
+  Ceiling,
+  Moving,
 };
 
 struct Obstacle {
   int bodyId = -1;
   ObstacleType type = ObstacleType::Normal;
   float bounceTimer  = 0.0f;
-  float moveTimer    = 0.0f;   // Moving 타입용
-  float moveRange    = 80.0f;  // 움직임 범위
-  float moveOriginX  = 0.0f;   // 원래 X 위치
-  float ceilingY     = 0.0f;   // Ceiling 타입 Y 위치
+  float moveTimer    = 0.0f;
+  float moveRange    = 80.0f;
+  float moveOriginX  = 0.0f;
+  float ceilingY     = 0.0f;
 };
 
-// 파티클
 struct Particle {
   Vec2  pos{};
   Vec2  vel{};
@@ -67,7 +66,6 @@ struct Particle {
   Uint8 r = 255, g = 255, b = 255;
 };
 
-// 역행 잔상 (플레이어 위치만)
 struct RewindGhost {
   Vec2  pos{};
   float life    = 0.0f;
@@ -75,7 +73,6 @@ struct RewindGhost {
   float age01   = 0.0f;
 };
 
-// 텍스트 팝업
 struct PopupText {
   std::string text;
   float x       = 0.0f;
@@ -169,6 +166,10 @@ private:
   void DrawClearOverlay(SDL_Renderer* r) const;
   void DrawGameplayHud(SDL_Renderer* r) const;
   void ReturnToTitle();
+  void LoadLeaderboard();
+  void SaveLeaderboard();
+  void SubmitScore();
+  void DrawLeaderboard(SDL_Renderer* r) const;
 
   int m_w = 0;
   int m_h = 0;
@@ -237,15 +238,19 @@ private:
   float m_hitCooldown = 0.0f;
   float m_shieldTimer     = 0.0f;
   float m_blinkTimer  = 0.0f;
- // 슬로우모션
+
+  // 슬로우모션
   bool  m_slowActive    = false;
   float m_slowTimer     = 0.0f;
-  float m_staminaSlow   = 1.5f;   // 슬로우모션용 스태미나 (0~1.5)
-  float m_staminaRewind = 1.5f;   // 역행용 스태미나 (0~1.5)
+  float m_staminaSlow   = 1.5f;
+  float m_staminaRewind = 1.5f;
 
   // 점수
   int   m_score         = 0;
   int   m_bombKillCount = 0;
+
+  // 폭탄 딜레이
+  float m_bombCooldown = 0.0f;
 
   // 피격 효과
   float m_hitEffectTimer = 0.0f;
@@ -278,6 +283,15 @@ private:
   bool  m_cleared           = false;
   float m_fireworkCooldown  = 0.0f;
   float m_clearPulse        = 0.0f;
+
+  // 리더보드
+  struct ScoreEntry {
+    int score    = 0;
+    int distance = 0;
+    int bombKills = 0;
+  };
+  std::vector<ScoreEntry> m_leaderboard;
+  bool m_scoreSubmitted = false;
 };
 
 } // namespace cr
