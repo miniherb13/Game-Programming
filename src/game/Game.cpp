@@ -1250,7 +1250,6 @@ void Game::Restart() {
   m_distance               = 0.0f;
   m_elapsed                = 0.0f;
   m_scrollSpeed            = 240.0f;
-  m_stamina                = 3.0f;
   m_jumpBuffer             = 0.0f;
   m_jumpGroundGrace        = 0.0f;
   m_coyote                 = 0.0f;
@@ -1747,7 +1746,6 @@ void Game::HandleInput(float dt, Input& input) {
         m_rewindQueued = true;
       }
       input.ConsumeRewindPending();
-      input.ConsumeRewindPending();
       if (in.slowPressed) {
         // 슬로우모션은 FixedUpdate에서 처리
       }
@@ -1832,8 +1830,9 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
         rewindSucceeded = true;
         const float staminaBeforeRewind = m_staminaRewind;
         m_snapshotScratch.Apply(m_world, m_playerId, m_jumpBuffer, m_coyote,
-                                m_stamina, m_hp, m_bombs, m_fields, m_propIds);
+                                m_staminaRewind, m_hp, m_bombs, m_fields, m_propIds);
         m_staminaRewind = std::max(0.0f, staminaBeforeRewind - kRewindStaminaCost);
+        m_slowActive = false;
         m_rewindCooldownLeft = kRewindStaminaCost;
         m_rewindPoseLeft     = kRewindPoseSeconds;
         m_hp = std::min(1.0f, m_hp + 0.1f);
@@ -1863,7 +1862,7 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   m_jumpGroundGrace = std::max(0.0f, m_jumpGroundGrace - dt);
 
   m_snapshotScratch.Capture(m_world, m_playerId, m_jumpBuffer, m_coyote,
-                            m_stamina, m_hp, m_bombs, m_fields, m_propIds);
+                            m_staminaRewind, m_hp, m_bombs, m_fields, m_propIds);
   m_rewind.PushFrame(m_snapshotScratch);
 
   auto& p = m_world.Get(m_playerId);
