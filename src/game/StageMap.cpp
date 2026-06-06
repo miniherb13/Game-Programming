@@ -269,11 +269,11 @@ void StageMap::DrawScrollingLayer(SDL_Renderer* renderer,
   if (drawW <= 0) return;
 
   const int startTile = static_cast<int>(std::floor(parallaxX / static_cast<float>(drawW)));
-  const int endTile = startTile + screenW / drawW + 2;
+  const int endTile = startTile + (screenW + drawW - 1) / drawW + 3;
 
   for (int i = startTile; i <= endTile; i++) {
-    const int x = static_cast<int>(static_cast<float>(i) * drawW - parallaxX);
-    SDL_Rect dst{x, dstY, drawW, dstH};
+    const int x = static_cast<int>(std::floor(static_cast<float>(i) * drawW - parallaxX));
+    SDL_Rect dst{x, dstY, drawW + 2, dstH};
     SDL_RenderCopy(renderer, tex, nullptr, &dst);
   }
 }
@@ -331,7 +331,11 @@ void StageMap::DrawTerrain(SDL_Renderer* renderer, int screenW, int screenH, flo
   const int topY = static_cast<int>(groundY) - px;
   const int fillH = std::max(px, screenH - topY);
   const int startCol = static_cast<int>(std::floor(cameraX / static_cast<float>(px)));
-  const int endCol = startCol + screenW / px + 3;
+  const int endCol = startCol + (screenW + px - 1) / px + 4;
+
+  SDL_SetRenderDrawColor(renderer, 28, 24, 32, 255);
+  SDL_Rect groundFill{0, topY, screenW, screenH - topY};
+  SDL_RenderFillRect(renderer, &groundFill);
 
   const int topCol = kTileGroundTop % m_cols;
   const int topRow = kTileGroundTop / m_cols;
@@ -340,12 +344,12 @@ void StageMap::DrawTerrain(SDL_Renderer* renderer, int screenW, int screenH, flo
 
   for (int col = startCol; col <= endCol; col++) {
     const int worldX = col * px;
-    const int screenX = static_cast<int>(worldX - cameraX);
+    const int screenX = static_cast<int>(std::floor(static_cast<float>(worldX) - cameraX));
 
-    DrawTile(renderer, topCol, topRow, screenX, topY, px, px);
+    DrawTile(renderer, topCol, topRow, screenX, topY, px + 1, px + 1);
 
-    for (int fy = topY + px; fy < topY + fillH; fy += px) {
-      DrawTile(renderer, fillCol, fillRow, screenX, fy, px, px);
+    for (int fy = topY + px - 1; fy < topY + fillH; fy += px) {
+      DrawTile(renderer, fillCol, fillRow, screenX, fy, px + 1, px + 1);
     }
   }
 

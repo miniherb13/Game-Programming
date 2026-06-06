@@ -169,7 +169,11 @@ private:
   void LoadLeaderboard();
   void SaveLeaderboard();
   void SubmitScore();
-  void DrawLeaderboard(SDL_Renderer* r) const;
+  int DrawLeaderboard(SDL_Renderer* r, int topY) const;
+
+  enum class SlowInputMode { Hold, Toggle };
+
+  int PickSpawnPattern(int maxPattern) const;
 
   int m_w = 0;
   int m_h = 0;
@@ -208,6 +212,7 @@ private:
   float m_playerScreenX = 140.0f;
   float m_jumpBuffer    = 0.0f;
   float m_jumpGroundGrace = 0.0f;
+  int   m_airJumpsLeft  = 0;
   float m_coyote        = 0.0f;
   float m_runAnimPhase  = 0.0f;
   float m_throwReleasePoseLeft = 0.0f;
@@ -241,6 +246,7 @@ private:
 
   // 슬로우모션
   bool  m_slowActive    = false;
+  SlowInputMode m_slowInputMode = SlowInputMode::Hold;
   float m_slowTimer     = 0.0f;
   float m_staminaSlow   = 1.5f;
   float m_staminaRewind = 1.5f;
@@ -259,6 +265,7 @@ private:
   float m_nextSpawnX   = 0.0f;
   float m_spawnGap     = 200.0f;
   int   m_patternIndex = 0;
+  int   m_lastSpawnPattern = -1;
   float m_nextItemX    = 300.0f;
 
   // 떨어지는 장애물

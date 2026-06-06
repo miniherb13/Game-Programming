@@ -325,11 +325,15 @@ void BombSystem::ArmSlot(int slotIndex, PhysicsWorld& world, const Body& player,
 }
 
 void BombSystem::Fire(const Body& player, Vec2 mouseWorld, float charge01, PhysicsWorld& world) {
+  (void)TryFire(player, mouseWorld, charge01, world);
+}
+
+bool BombSystem::TryFire(const Body& player, Vec2 mouseWorld, float charge01, PhysicsWorld& world) {
   const Vec2 velocity = ComputeThrowVelocity(player, mouseWorld, charge01);
-  if (velocity.LenSq() < 1.0f) return;
+  if (velocity.LenSq() < 1.0f) return false;
 
   const int slot = AllocateSlot();
-  if (slot < 0) return;
+  if (slot < 0) return false;
 
   if (m_slots[static_cast<std::size_t>(slot)].phase == BombPhase::Flying) {
     auto& old = world.Get(m_slots[static_cast<std::size_t>(slot)].bodyId);
@@ -337,9 +341,10 @@ void BombSystem::Fire(const Body& player, Vec2 mouseWorld, float charge01, Physi
   }
 
   ArmSlot(slot, world, player, velocity);
+  return true;
 }
 
-void BombSystem::UpdateThrow(float dt,
+bool BombSystem::UpdateThrow(float dt,
                              const InputState& input,
                              Vec2 mouseWorld,
                              PhysicsWorld& world,
@@ -347,16 +352,18 @@ void BombSystem::UpdateThrow(float dt,
   if (input.throwHeld) {
     m_charging = true;
     m_chargeTime = std::min(BombTuning::maxChargeTime, m_chargeTime + dt);
-    return;
+    return false;
   }
 
+  bool fired = false;
   if (m_charging && input.throwReleased) {
     const float charge01 = std::max(Charge01(), BombTuning::minCharge01OnRelease);
-    Fire(player, mouseWorld, charge01, world);
+    fired = TryFire(player, mouseWorld, charge01, world);
   }
 
   m_charging = false;
   m_chargeTime = 0.0f;
+  return fired;
 }
 
 void BombSystem::ApplyExplosionImpulse(PhysicsWorld& world,

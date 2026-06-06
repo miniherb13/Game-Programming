@@ -82,7 +82,7 @@ public:
 
   bool IsAiming(const InputState& input) const;
 
-  void UpdateThrow(float dt, const InputState& input, Vec2 mouseWorld, PhysicsWorld& world, const Body& player);
+  bool UpdateThrow(float dt, const InputState& input, Vec2 mouseWorld, PhysicsWorld& world, const Body& player);
   void FixedUpdate(float dt, PhysicsWorld& world, int playerId,
                    const std::vector<int>& obstacleBodyIds);
 
@@ -110,6 +110,7 @@ private:
   Vec2 LaunchPosition(const Body& player) const;
   Vec2 ComputeThrowVelocity(const Body& player, Vec2 mouseWorld, float charge01) const;
   void Fire(const Body& player, Vec2 mouseWorld, float charge01, PhysicsWorld& world);
+  bool TryFire(const Body& player, Vec2 mouseWorld, float charge01, PhysicsWorld& world);
   void SampleTrajectory(Vec2 spawnPos,
                         Vec2 velocity,
                         float gravityY,

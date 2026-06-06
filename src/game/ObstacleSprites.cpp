@@ -219,7 +219,8 @@ bool ObstacleSprites::LoadFile(const char* folder,
                                std::vector<unsigned char>& rgba,
                                int& w,
                                int& h,
-                               CropRect& outBounds) const {
+                               CropRect& outBounds,
+                               bool heavyOutline) const {
   for (const auto& path : CandidatePaths(folder, filename)) {
     int comp = 0;
     unsigned char* pixels = stbi_load(path.c_str(), &w, &h, &comp, 4);
@@ -228,7 +229,12 @@ bool ObstacleSprites::LoadFile(const char* folder,
     rgba.assign(pixels, pixels + static_cast<std::size_t>(w * h * 4));
     stbi_image_free(pixels);
     RemoveBackground(rgba, w, h);
-    AddBoldWhiteOutline(rgba, w, h);
+    if (heavyOutline) {
+      AddExtraBoldWhiteOutline(rgba, w, h);
+      AddWhiteOutlineRing(rgba, w, h, 2);
+    } else {
+      AddBoldWhiteOutline(rgba, w, h);
+    }
     const PixelBounds bounds = ComputeContentBounds(rgba, w, h);
     outBounds.x = bounds.x;
     outBounds.y = bounds.y;
@@ -242,9 +248,9 @@ bool ObstacleSprites::LoadFile(const char* folder,
   return false;
 }
 
-bool ObstacleSprites::LoadBank(SpriteBank& bank, const char* folder) const {
+bool ObstacleSprites::LoadBank(SpriteBank& bank, const char* folder, bool heavyOutline) const {
   const auto loadOne = [&](SpriteEntry& entry) {
-    entry.loaded = LoadFile(folder, entry.filename, entry.pixels, entry.w, entry.h, entry.crop);
+    entry.loaded = LoadFile(folder, entry.filename, entry.pixels, entry.w, entry.h, entry.crop, heavyOutline);
     if (!entry.loaded) {
       Log(LogLevel::Warn, std::string(folder) + entry.filename + " missing");
     }
@@ -265,9 +271,9 @@ bool ObstacleSprites::LoadBank(SpriteBank& bank, const char* folder) const {
 }
 
 bool ObstacleSprites::Load() {
-  const bool mars = LoadBank(m_mars, StageFolder(ObstacleStage::Mars));
-  const bool glacier = LoadBank(m_glacier, StageFolder(ObstacleStage::Glacier));
-  const bool emerald = LoadBank(m_emerald, StageFolder(ObstacleStage::Emerald));
+  const bool mars = LoadBank(m_mars, StageFolder(ObstacleStage::Mars), false);
+  const bool glacier = LoadBank(m_glacier, StageFolder(ObstacleStage::Glacier), false);
+  const bool emerald = LoadBank(m_emerald, StageFolder(ObstacleStage::Emerald), true);
   return mars || glacier || emerald;
 }
 

@@ -1,0 +1,21 @@
+Chrono Rush — 플레이 방법
+========================
+
+1. chrono_rush_demo.exe 를 더블클릭해서 실행하세요.
+2. assets 폴더는 exe와 같은 위치에 두세요. (압축 해제 그대로 사용)
+
+조작
+----
+C       점프 (1단 Normal / 공중 C = 2단 Tall)
+X       폭탄 (마우스 조준 · 홀드/떼기 · 쿨 0.75초)
+Z       시간 역행 (3초 · 보라 스태미나)
+Shift   슬로우 (기본 홀드 · H = 토글 전환)
+Space   시작 / 재개 / 타이틀
+Esc     일시정지 (한 번 더 = 종료)
+아이템  번개=스태미나 · 하트=HP · 별=실드
+
+실행이 안 될 때
+--------------
+Windows 64bit PC에서 실행하세요.
+"DLL이 없습니다" 오류가 나면 Visual C++ Redistributable (x64)를 설치하세요.
+https://learn.microsoft.com/ko-kr/cpp/windows/latest-supported-vc-redist

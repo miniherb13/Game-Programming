@@ -12,6 +12,7 @@ void GameSnapshot::Capture(const PhysicsWorld& world,
                            int playerId,
                            float jumpBuffer_,
                            float coyote_,
+                           int airJumpsLeft_,
                            float stamina_,
                            float hp_,
                            const BombSystem& bombSystem,
@@ -20,6 +21,7 @@ void GameSnapshot::Capture(const PhysicsWorld& world,
   player = BodySnapshot::Save(world.Get(playerId));
   jumpBuffer = jumpBuffer_;
   coyote = coyote_;
+  airJumpsLeft = airJumpsLeft_;
   stamina = stamina_;
   hp = hp_;
 
@@ -36,6 +38,7 @@ void GameSnapshot::Apply(PhysicsWorld& world,
                          int playerId,
                          float& jumpBuffer_,
                          float& coyote_,
+                         int& airJumpsLeft_,
                          float& stamina_,
                          float& hp_,
                          BombSystem& bombSystem,
@@ -44,6 +47,7 @@ void GameSnapshot::Apply(PhysicsWorld& world,
   player.Load(world.Get(playerId));
   jumpBuffer_ = jumpBuffer;
   coyote_ = coyote;
+  airJumpsLeft_ = airJumpsLeft;
   stamina_ = stamina;
   hp_ = hp;
 

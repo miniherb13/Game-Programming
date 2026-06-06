@@ -13,13 +13,14 @@ struct InputState {
   bool throwPressed = false;
   bool rewindPressed = false;
   bool debugPressed = false;
-  bool slowPressed  = false;  // F키 슬로우모션
+  bool slowPressed  = false;  // Shift — 토글 모드용
+  bool slowModeTogglePressed = false;  // H — 슬로우 홀드/토글 전환
 
   bool jumpHeld    = false;
   bool throwHeld   = false;
   bool throwReleased = false;
   bool rewindHeld  = false;
-  bool slowHeld    = false;  // F키 홀드
+  bool slowHeld    = false;  // Shift 홀드
 
   bool mouseDown = false;
   bool mouseReleased = false;
@@ -47,7 +48,7 @@ private:
   bool m_rewindPending        = false;
   bool m_debugPending         = false;
   bool m_throwReleasedPending = false;
-  bool m_slowPending          = false;  // F키
+  bool m_slowPending          = false;
 };
 
 } // namespace cr
