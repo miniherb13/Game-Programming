@@ -36,6 +36,7 @@ public:
   void ClearGameplayPending();
   void ConsumeRewindPending();
   void ConsumeThrowReleasedPending();
+  void ConsumeSlowPending();
   bool ConsumeJumpPressForFixedStep();
 
   const InputState& State() const { return m_state; }

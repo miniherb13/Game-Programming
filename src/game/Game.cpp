@@ -31,6 +31,10 @@ constexpr float kRewindSpinRadPerSec  = 5.5f;
 constexpr float kStartGraceSeconds    = 1.0f;
 constexpr float kItemMagnetRadius     = 110.0f;
 constexpr float kItemMagnetPullSpeed  = 95.0f;
+constexpr float kSlowTimeScale          = 0.35f;
+constexpr float kSlowStaminaMax         = 1.5f;
+constexpr float kSlowStaminaDrainPerSec = 0.5f;
+constexpr float kSlowStaminaRegenPerSec = 0.25f;
 
 // In-game HUD layout (1280x720 baseline; avoids bar/key/score overlap).
 constexpr int kHudMargin   = 12;
@@ -1005,6 +1009,7 @@ void Game::UpdateItems(float dt) {
         AddPopup("+HP",      sx, sy,  80, 220,  80);
         SpawnParticles(body.pos, 6,  80, 220,  80);
       } else if (item.type == ItemType::Stamina) {
+        m_staminaSlow   = std::min(kSlowStaminaMax, m_staminaSlow + kSlowStaminaMax);
         m_staminaRewind = std::min(1.5f, m_staminaRewind + 1.5f);
         m_score += 10;
         AddPopup("+STAMINA", sx, sy,  80, 160, 255);
@@ -1737,6 +1742,15 @@ void Game::HandleInput(float dt, Input& input) {
   if (m_paused && in.resumePressed) m_paused = false;
 
   if (!m_paused) {
+    if (m_started && in.slowPressed) {
+      if (m_slowActive) {
+        m_slowActive = false;
+      } else if (m_staminaSlow > 0.0f) {
+        m_slowActive = true;
+      }
+      input.ConsumeSlowPending();
+    }
+
     auto& p = m_world.Get(m_playerId);
     if (in.rewindPressed) {
       m_bombs.CancelCharge();
@@ -1746,9 +1760,6 @@ void Game::HandleInput(float dt, Input& input) {
         m_rewindQueued = true;
       }
       input.ConsumeRewindPending();
-      if (in.slowPressed) {
-        // 슬로우모션은 FixedUpdate에서 처리
-      }
     } else {
       if (m_bombs.IsCharging() && in.throwReleased) m_throwReleasePoseLeft = 0.35f;
       m_bombs.UpdateThrow(dt, in, MouseWorldPos(in), m_world, p);
@@ -1800,20 +1811,16 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   m_shieldTimer        = std::max(0.0f, m_shieldTimer - dt);
   m_stageNotifyTimer   = std::max(0.0f, m_stageNotifyTimer - dt);
   m_hitEffectTimer     = std::max(0.0f, m_hitEffectTimer - dt);
-// 슬로우모션 (F키)
-  if (input.slowPressed && m_staminaSlow >= 0.5f && !m_slowActive) {
-    m_slowActive = true;
-  }
+// 슬로우모션 (F키 토글 — HandleInput에서 전환)
   if (m_slowActive) {
-    m_staminaSlow = std::max(0.0f, m_staminaSlow - dt * 0.5f);
+    m_staminaSlow = std::max(0.0f, m_staminaSlow - dt * kSlowStaminaDrainPerSec);
     if (m_staminaSlow <= 0.0f) {
       m_slowActive = false;
     }
+  } else {
+    m_staminaSlow = std::min(kSlowStaminaMax, m_staminaSlow + dt * kSlowStaminaRegenPerSec);
   }
-  // 슬로우 스태미나 회복
-  if (!m_slowActive) {
-    m_staminaSlow = std::min(1.5f, m_staminaSlow + dt * 0.1f);
-  }
+  const float simDt = m_slowActive ? dt * kSlowTimeScale : dt;
   const bool rewindFrame = m_rewindQueued;
   bool rewindSucceeded = false;
   if (m_rewindQueued) {
@@ -1858,8 +1865,8 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   }
 
   if (!rewindFrame && inputDevice.ConsumeJumpPressForFixedStep()) m_jumpBuffer = 0.12f;
-  m_jumpBuffer      = std::max(0.0f, m_jumpBuffer - dt);
-  m_jumpGroundGrace = std::max(0.0f, m_jumpGroundGrace - dt);
+  m_jumpBuffer      = std::max(0.0f, m_jumpBuffer - simDt);
+  m_jumpGroundGrace = std::max(0.0f, m_jumpGroundGrace - simDt);
 
   m_snapshotScratch.Capture(m_world, m_playerId, m_jumpBuffer, m_coyote,
                             m_staminaRewind, m_hp, m_bombs, m_fields, m_propIds);
@@ -1880,33 +1887,32 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   m_fields.ApplyForces(m_world, m_playerId, m_bombs.BodyIds(), m_propIds);
 
   const float laneXBeforeStep = p.pos.x;
-  const float effectiveDt = m_slowActive ? dt * 0.3f : dt;
-    m_world.Step(effectiveDt);
-    m_fields.FixedUpdate(effectiveDt);
-    std::vector<int> bombObstacleIds;
-    bombObstacleIds.reserve(m_obstacles.size() + m_fallingIds.size());
-    for (const auto& obs : m_obstacles) bombObstacleIds.push_back(obs.bodyId);
-    for (int id : m_fallingIds) bombObstacleIds.push_back(id);
-    m_bombs.FixedUpdate(effectiveDt, m_world, m_playerId, bombObstacleIds);
+  m_world.Step(simDt);
+  m_fields.FixedUpdate(simDt);
+  std::vector<int> bombObstacleIds;
+  bombObstacleIds.reserve(m_obstacles.size() + m_fallingIds.size());
+  for (const auto& obs : m_obstacles) bombObstacleIds.push_back(obs.bodyId);
+  for (int id : m_fallingIds) bombObstacleIds.push_back(id);
+  m_bombs.FixedUpdate(simDt, m_world, m_playerId, bombObstacleIds);
 
-  p.pos.x = laneXBeforeStep + m_scrollSpeed * effectiveDt;
+  p.pos.x = laneXBeforeStep + m_scrollSpeed * simDt;
   p.vel.x = m_scrollSpeed;
   PreventPlayerObstacleClimb();
   ClampPlayerToGround();
 
   if (m_jumpGroundGrace > 0.0f) p.onGround = false;
-  else if (p.onGround) { m_coyote = 0.10f; m_runAnimPhase += dt; }
-  else m_coyote = std::max(0.0f, m_coyote - dt);
+  else if (p.onGround) { m_coyote = 0.10f; m_runAnimPhase += simDt; }
+  else m_coyote = std::max(0.0f, m_coyote - simDt);
 
   if (m_startGraceLeft > 0.0f) {
-    m_startGraceLeft = std::max(0.0f, m_startGraceLeft - dt);
+    m_startGraceLeft = std::max(0.0f, m_startGraceLeft - simDt);
   }
   const bool inStartGrace = m_startGraceLeft > 0.0f;
 
   if (!inStartGrace) {
-    const float distStep = m_scrollSpeed * dt;
+    const float distStep = m_scrollSpeed * simDt;
     m_distance    += distStep;
-    m_elapsed     += dt;
+    m_elapsed     += simDt;
     m_scrollSpeed  = 240.0f + m_elapsed * 1.5f;
     m_hp = std::max(0.0f, m_hp - distStep / kHpSurvivalDistanceM);
     if (m_hp <= 0.0f) TriggerGameOver();
@@ -1929,7 +1935,7 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
 
   if (m_distance > 300.0f) {
     m_fallingSpawnInterval = std::max(3.0f, 8.0f - m_elapsed * 0.1f);
-    m_fallingSpawnTimer += dt;
+    m_fallingSpawnTimer += simDt;
     if (m_fallingSpawnTimer >= m_fallingSpawnInterval) {
       m_fallingSpawnTimer = 0.0f;
       SpawnFallingObstacle();
@@ -1938,11 +1944,11 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
 
   // Spawn ahead at the map horizon even during start grace so obstacles approach naturally.
   UpdateSpawn();
-  UpdateFallingObstacles(dt);
-  UpdateObstacles(dt);
-  UpdateItems(dt);
-  UpdateParticles(dt);
-  UpdatePopups(dt);
+  UpdateFallingObstacles(simDt);
+  UpdateObstacles(simDt);
+  UpdateItems(simDt);
+  UpdateParticles(simDt);
+  UpdatePopups(simDt);
   CheckCollision();
   CheckGameOver();
   RecordPlayerPositionHistory(p.pos);
@@ -1979,7 +1985,7 @@ void Game::DrawGameplayHud(SDL_Renderer* r) const {
   DrawCookieRunBarShell(r, staminaBg, 18, 32, 22, 8, 14, 10, 36, 58, 34);
   // 슬로우 스태미나 바 (왼쪽 절반 - 파랑)
   const SDL_Rect slowBg{staminaBg.x, staminaBg.y, staminaBg.w / 2 - 2, staminaBg.h};
-  FillCookieStripedCapsule(r, slowBg, m_staminaSlow / 1.5f, 70, 130, 255, 70, 130, 255);
+  FillCookieStripedCapsule(r, slowBg, m_staminaSlow / kSlowStaminaMax, 70, 130, 255, 70, 130, 255);
 
   // 역행 스태미나 바 (오른쪽 절반 - 보라)
   const SDL_Rect rewindBg{staminaBg.x + staminaBg.w / 2 + 2, staminaBg.y, staminaBg.w / 2 - 2, staminaBg.h};
@@ -2024,14 +2030,15 @@ void Game::DrawTitleOverlay(SDL_Renderer* r) const {
   constexpr int kBottomPad = 24;
   constexpr int kTitleGap = 10;
   constexpr int kSectionGap = 18;
-  constexpr int kControlLineCount = 6;
+  constexpr int kControlLineCount = 7;
   constexpr int kTextInsetX = 32;
 
   const char* lines[] = {
       "C : 점프",
       "X 홀드 / 떼기 : 폭탄",
       "마우스 : 폭탄 조준",
-      "Z : 시간 역행 (3초, 스태미나 3)",
+      "F : 슬로우모션 ON/OFF (슬로우 스태미나 소모)",
+      "Z : 시간 역행 (3초, 역행 스태미나 1.5)",
       "번개 = 스태미나 · 하트 = 체력 · 별 = 무적",
       "Esc : 일시정지",
   };
