@@ -17,7 +17,7 @@ namespace {
 
 constexpr float kPlayerDisplayHeight = 82.0f;
 constexpr float kRewindPoseSeconds   = 1.0f;
-constexpr float kRewindStaminaCost   = 3.0f;
+constexpr float kRewindStaminaCost   = 1.5f;
 constexpr float kRewindFxSeconds     = 1.4f; // 0.7s fade-in + 0.7s fade-out
 constexpr int   kRewindConvergeParticles = 340;
 constexpr int   kRewindSparkParticles    = 220;
@@ -1005,7 +1005,7 @@ void Game::UpdateItems(float dt) {
         AddPopup("+HP",      sx, sy,  80, 220,  80);
         SpawnParticles(body.pos, 6,  80, 220,  80);
       } else if (item.type == ItemType::Stamina) {
-        m_stamina = std::min(3.0f, m_stamina + 1.5f);
+        m_staminaRewind = std::min(1.5f, m_staminaRewind + 1.5f);
         m_score += 10;
         AddPopup("+STAMINA", sx, sy,  80, 160, 255);
         SpawnParticles(body.pos, 6,  80, 160, 255);
@@ -1312,6 +1312,10 @@ void Game::Restart() {
   m_nextSpawnX     = SpawnHorizonX();
   m_nextItemX      = m_nextSpawnX;
   m_startGraceLeft = kStartGraceSeconds;
+  m_slowActive      = false;
+  m_slowTimer       = 0.0f;
+  m_staminaSlow     = 1.5f;
+  m_staminaRewind   = 1.5f;
 }
 
 Vec2 Game::MouseWorldPos(const InputState& input) const {
@@ -1739,10 +1743,14 @@ void Game::HandleInput(float dt, Input& input) {
       m_bombs.CancelCharge();
       m_throwReleasePoseLeft = 0.0f;
       m_jumpBuffer = 0.0f;
-      if (m_rewindCooldownLeft <= 0.0f && m_stamina >= kRewindStaminaCost) {
+      if (m_rewindCooldownLeft <= 0.0f && m_staminaRewind >= kRewindStaminaCost) {
         m_rewindQueued = true;
       }
       input.ConsumeRewindPending();
+      input.ConsumeRewindPending();
+      if (in.slowPressed) {
+        // 슬로우모션은 FixedUpdate에서 처리
+      }
     } else {
       if (m_bombs.IsCharging() && in.throwReleased) m_throwReleasePoseLeft = 0.35f;
       m_bombs.UpdateThrow(dt, in, MouseWorldPos(in), m_world, p);
@@ -1794,12 +1802,25 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   m_shieldTimer        = std::max(0.0f, m_shieldTimer - dt);
   m_stageNotifyTimer   = std::max(0.0f, m_stageNotifyTimer - dt);
   m_hitEffectTimer     = std::max(0.0f, m_hitEffectTimer - dt);
-
+// 슬로우모션 (F키)
+  if (input.slowPressed && m_staminaSlow >= 0.5f && !m_slowActive) {
+    m_slowActive = true;
+  }
+  if (m_slowActive) {
+    m_staminaSlow = std::max(0.0f, m_staminaSlow - dt * 0.5f);
+    if (m_staminaSlow <= 0.0f) {
+      m_slowActive = false;
+    }
+  }
+  // 슬로우 스태미나 회복
+  if (!m_slowActive) {
+    m_staminaSlow = std::min(1.5f, m_staminaSlow + dt * 0.1f);
+  }
   const bool rewindFrame = m_rewindQueued;
   bool rewindSucceeded = false;
   if (m_rewindQueued) {
     m_rewindQueued = false;
-    if (m_rewindCooldownLeft <= 0.0f && m_stamina >= kRewindStaminaCost &&
+    if (m_rewindCooldownLeft <= 0.0f && m_staminaRewind >= kRewindStaminaCost &&
         m_rewind.Size() >= m_rewind.Capacity()) {
       bool any = false;
       const std::size_t frames = m_rewind.Capacity();
@@ -1809,10 +1830,10 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
       }
       if (any) {
         rewindSucceeded = true;
-        const float staminaBeforeRewind = m_stamina;
+        const float staminaBeforeRewind = m_staminaRewind;
         m_snapshotScratch.Apply(m_world, m_playerId, m_jumpBuffer, m_coyote,
                                 m_stamina, m_hp, m_bombs, m_fields, m_propIds);
-        m_stamina = std::max(0.0f, staminaBeforeRewind - kRewindStaminaCost);
+        m_staminaRewind = std::max(0.0f, staminaBeforeRewind - kRewindStaminaCost);
         m_rewindCooldownLeft = kRewindStaminaCost;
         m_rewindPoseLeft     = kRewindPoseSeconds;
         m_hp = std::min(1.0f, m_hp + 0.1f);
@@ -1860,15 +1881,16 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   m_fields.ApplyForces(m_world, m_playerId, m_bombs.BodyIds(), m_propIds);
 
   const float laneXBeforeStep = p.pos.x;
-  m_world.Step(dt);
-  m_fields.FixedUpdate(dt);
-  std::vector<int> bombObstacleIds;
-  bombObstacleIds.reserve(m_obstacles.size() + m_fallingIds.size());
-  for (const auto& obs : m_obstacles) bombObstacleIds.push_back(obs.bodyId);
-  for (int id : m_fallingIds) bombObstacleIds.push_back(id);
-  m_bombs.FixedUpdate(dt, m_world, m_playerId, bombObstacleIds);
+  const float effectiveDt = m_slowActive ? dt * 0.3f : dt;
+    m_world.Step(effectiveDt);
+    m_fields.FixedUpdate(effectiveDt);
+    std::vector<int> bombObstacleIds;
+    bombObstacleIds.reserve(m_obstacles.size() + m_fallingIds.size());
+    for (const auto& obs : m_obstacles) bombObstacleIds.push_back(obs.bodyId);
+    for (int id : m_fallingIds) bombObstacleIds.push_back(id);
+    m_bombs.FixedUpdate(effectiveDt, m_world, m_playerId, bombObstacleIds);
 
-  p.pos.x = laneXBeforeStep + m_scrollSpeed * dt;
+  p.pos.x = laneXBeforeStep + m_scrollSpeed * effectiveDt;
   p.vel.x = m_scrollSpeed;
   PreventPlayerObstacleClimb();
   ClampPlayerToGround();
@@ -1904,7 +1926,7 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
     m_stageNotifyTimer = kStageNotifyDuration;
   }
 
-  m_stamina = std::min(3.0f, m_stamina + dt * 0.15f);
+  m_staminaRewind = std::min(1.5f, m_staminaRewind + dt * 0.15f);
 
   if (m_distance > 300.0f) {
     m_fallingSpawnInterval = std::max(3.0f, 8.0f - m_elapsed * 0.1f);
@@ -1956,7 +1978,13 @@ void Game::DrawGameplayHud(SDL_Renderer* r) const {
   DrawStaminaBadge(r, badgeCx, static_cast<float>(staminaBarY + kHudHpBarH / 2), &m_itemSprites);
   const SDL_Rect staminaBg{hpBarX, staminaBarY, barW, kHudHpBarH};
   DrawCookieRunBarShell(r, staminaBg, 18, 32, 22, 8, 14, 10, 36, 58, 34);
-  FillCookieStripedCapsule(r, staminaBg, m_stamina / 3.0f, 70, 190, 55, 145, 240, 95);
+  // 슬로우 스태미나 바 (왼쪽 절반 - 파랑)
+  const SDL_Rect slowBg{staminaBg.x, staminaBg.y, staminaBg.w / 2 - 2, staminaBg.h};
+  FillCookieStripedCapsule(r, slowBg, m_staminaSlow / 1.5f, 70, 130, 255, 70, 130, 255);
+
+  // 역행 스태미나 바 (오른쪽 절반 - 보라)
+  const SDL_Rect rewindBg{staminaBg.x + staminaBg.w / 2 + 2, staminaBg.y, staminaBg.w / 2 - 2, staminaBg.h};
+  FillCookieStripedCapsule(r, rewindBg, m_staminaRewind / 1.5f, 180, 80, 255, 180, 80, 255);
 
   m_ui.Draw(r, leftX, brandY, "CHRONO RUSH", SDL_Color{120, 220, 255, 220});
 
