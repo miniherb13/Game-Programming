@@ -43,7 +43,18 @@ constexpr int kHudDistBarW = 210;
 constexpr int kHudEnergyH  = 8;
 constexpr float kClearFireworkInterval = 0.35f;
 
-constexpr float kItemDisplaySize = 36.0f;
+constexpr float kItemDisplaySize = 36.0f * 1.25f;
+
+// Clock 1 o'clock → 7 o'clock: ~45° descent (shallow diagonal, down-left).
+Vec2 SampleMeteorFallVelocity() {
+  constexpr float kBaseDeg   = 135.0f;
+  constexpr float kSpreadDeg = 10.0f;
+  const float t = static_cast<float>(std::rand() % 1000) / 999.0f;
+  const float deg = kBaseDeg + (t * 2.0f - 1.0f) * kSpreadDeg;
+  const float rad = deg * 3.14159265f / 180.0f;
+  const float speed = 203.0f + static_cast<float>(std::rand() % 53);
+  return {std::cos(rad) * speed, std::sin(rad) * speed};
+}
 
 ItemSpriteId ItemSpriteFor(ItemType type) {
   switch (type) {
@@ -323,50 +334,37 @@ Game::Game(int width, int height)
   p.lockVelX      = true;
 
   m_bombs.InitPool(m_world);
-  m_bombs.SetExplosionHandler([this](Vec2 center) {
+  m_bombs.SetExplosionHandler([this](Vec2 center, int hitObstacleId) {
     SpawnExplosionVfx(center);
     m_fields.SpawnBlackHole(center);
+    constexpr float kBlastRadius = BombTuning::explosionRadius;
+    constexpr float kSpritePadding = 14.0f;
+
     for (auto& obs : m_obstacles) {
       auto& body = m_world.Get(obs.bodyId);
       if (!body.active) continue;
+      if (obs.type == ObstacleType::Ceiling) continue;
+
+      const bool directHit = obs.bodyId == hitObstacleId;
       const float dx   = body.pos.x - center.x;
       const float dy   = body.pos.y - center.y;
       const float dist = std::sqrt(dx * dx + dy * dy);
-      if (dist < 95.0f) {
-        SpawnParticles(body.pos, 12, 255, 160, 40);
-        m_score += 50;
-        m_bombKillCount++;
-        if (dist < 60.0f) {
-          // 아주 가까우면 날아가다가 사라짐
-          const float force = 800.0f / (dist + 1.0f);
-          const float nx = dist > 0.0f ? dx / dist : 1.0f;
-          const float ny = dist > 0.0f ? dy / dist : 0.0f;
-          body.linearDamping = 0.1f;
-          body.groundFriction = 0.0f;
-          body.invMass = 1.0f / 1.8f;
-          body.vel.x += nx * force;
-          body.vel.y += ny * force - 200.0f;
-          // 1초 후 사라지게 타이머 설정 (obs에 저장)
-          obs.bounceTimer = -1.0f; // -1 = 날아가는 중
-        } else {
-          // 범위 안이지만 멀면 그냥 날아감
-          const float force = 400.0f / (dist + 1.0f);
-          body.linearDamping = 0.1f;
-          body.groundFriction = 0.0f;
-          const float nx = dist > 0.0f ? dx / dist : 1.0f;
-          body.invMass = 1.0f / 1.8f;
-          const float ny = dist > 0.0f ? dy / dist : 0.0f;
-          body.vel.x += nx * force;
-          body.vel.y += ny * force - 150.0f;
-        }
-      }
+      const float destroyRadius = kBlastRadius + body.circle.radius + kSpritePadding;
+      if (!directHit && dist > destroyRadius) continue;
+
+      SpawnParticles(body.pos, 12, 255, 160, 40);
+      body.active = false;
+      body.vel = {};
+      m_score += 50;
+      m_bombKillCount++;
     }
     for (int id : m_fallingIds) {
       auto& crate = m_world.Get(id);
       if (!crate.active) continue;
       const float dx = crate.pos.x - center.x;
       const float dy = crate.pos.y - center.y;
-      if (std::sqrt(dx * dx + dy * dy) < 95.0f) {
+      const float dist = std::sqrt(dx * dx + dy * dy);
+      if (dist <= kBlastRadius + crate.circle.radius + kSpritePadding) {
         SpawnParticles(crate.pos, 8, 150, 80, 220);
         crate.active = false;
         m_score += 30;
@@ -379,9 +377,10 @@ Game::Game(int width, int height)
 
   if (!m_playerSprite.Load())  Log(LogLevel::Error, "Failed to load assets/player/*.png");
   if (!m_itemSprites.Load())   Log(LogLevel::Warn,  "Item icons missing (assets/items/*.png)");
-  if (!m_obstacleSprites.Load()) Log(LogLevel::Warn, "Mars obstacle sprites missing (assets/stages/mars/obstacles/*.png)");
+  if (!m_obstacleSprites.Load()) Log(LogLevel::Warn, "Obstacle sprites missing (assets/stages/*/obstacles/*.png)");
   if (!m_stage.LoadMars())     Log(LogLevel::Warn,  "Mars stage assets missing");
   if (!m_glacier.Load())       Log(LogLevel::Warn,  "Glacier stage assets missing");
+  if (!m_emerald.Load())       Log(LogLevel::Warn,  "Emerald stage assets missing");
 }
 
 Game::~Game() {
@@ -510,20 +509,116 @@ void Game::SpawnPattern(float x, int pattern) {
 
 void Game::SpawnFallingObstacle() {
   const auto& player = m_world.Get(m_playerId);
-  const float spawnX = player.pos.x + 400.0f + static_cast<float>(std::rand() % 200);
-  const int id = m_world.CreateCircle(20.0f, {spawnX, -30.0f}, 1.5f, false);
+  const float landingAhead = 340.0f + static_cast<float>(std::rand() % 180);
+  const float spawnX = player.pos.x + landingAhead + 240.0f + static_cast<float>(std::rand() % 120);
+  const float spawnY = -80.0f - static_cast<float>(std::rand() % 60);
+  const int id = m_world.CreateCircle(20.0f, {spawnX, spawnY}, 1.5f, false);
   auto& crate = m_world.Get(id);
   crate.kind = BodyKind::Obstacle;
-  crate.restitution = 0.3f; crate.linearDamping = 0.2f; crate.groundFriction = 0.5f;
+  crate.restitution = 0.3f;
+  crate.linearDamping = 0.06f;
+  crate.groundFriction = 0.5f;
+  crate.vel = SampleMeteorFallVelocity();
   m_fallingIds.push_back(id);
 }
 
-void Game::UpdateFallingObstacles() {
+void Game::SpawnMeteorTrailParticle(Vec2 meteorPos, Vec2 meteorVel, ObstacleStage stage) {
+  Vec2 dir = Normalize(meteorVel);
+  if (dir.LenSq() < 1e-4f) dir = {-0.707f, 0.707f};
+
+  const Vec2 tailDir = dir * -1.0f;
+  const Vec2 tangent{-dir.y, dir.x};
+  const float behind = 18.0f + static_cast<float>(std::rand() % 16);
+  const float side = static_cast<float>(std::rand() % 24) - 12.0f;
+
+  Particle pt;
+  pt.pos = meteorPos + tailDir * behind + tangent * side;
+
+  const float backSpeed = 35.0f + static_cast<float>(std::rand() % 70);
+  const float spread = static_cast<float>(std::rand() % 50) - 25.0f;
+  pt.vel = tailDir * backSpeed + tangent * spread + meteorVel * 0.12f;
+  pt.drag = 2.0f;
+  pt.maxLife = 0.24f + static_cast<float>(std::rand() % 20) / 100.0f;
+  pt.life = pt.maxLife;
+  pt.size = 2.0f + static_cast<float>(std::rand() % 4);
+  pt.glow = true;
+
+  if (stage == ObstacleStage::Emerald) {
+    pt.gravity = 50.0f;
+    const int tone = std::rand() % 100;
+    if (tone < 45) {
+      pt.r = static_cast<Uint8>(60 + std::rand() % 40);
+      pt.g = static_cast<Uint8>(190 + std::rand() % 50);
+      pt.b = static_cast<Uint8>(40 + std::rand() % 35);
+    } else if (tone < 80) {
+      pt.r = static_cast<Uint8>(90 + std::rand() % 45);
+      pt.g = static_cast<Uint8>(220 + std::rand() % 35);
+      pt.b = static_cast<Uint8>(70 + std::rand() % 40);
+    } else {
+      pt.r = static_cast<Uint8>(140 + std::rand() % 50);
+      pt.g = static_cast<Uint8>(240 + std::rand() % 15);
+      pt.b = static_cast<Uint8>(90 + std::rand() % 40);
+    }
+  } else if (stage == ObstacleStage::Glacier) {
+    pt.gravity = 60.0f;
+    const int tone = std::rand() % 100;
+    if (tone < 45) {
+      pt.r = static_cast<Uint8>(90 + std::rand() % 40);
+      pt.g = static_cast<Uint8>(195 + std::rand() % 45);
+      pt.b = 255;
+    } else if (tone < 80) {
+      pt.r = static_cast<Uint8>(160 + std::rand() % 50);
+      pt.g = static_cast<Uint8>(225 + std::rand() % 30);
+      pt.b = 255;
+    } else {
+      pt.r = static_cast<Uint8>(210 + std::rand() % 35);
+      pt.g = static_cast<Uint8>(240 + std::rand() % 15);
+      pt.b = 255;
+    }
+  } else {
+    pt.gravity = 100.0f;
+    const int tone = std::rand() % 100;
+    if (tone < 50) {
+      pt.r = static_cast<Uint8>(210 + std::rand() % 45);
+      pt.g = static_cast<Uint8>(20 + std::rand() % 35);
+      pt.b = static_cast<Uint8>(10 + std::rand() % 20);
+    } else if (tone < 85) {
+      pt.r = static_cast<Uint8>(170 + std::rand() % 60);
+      pt.g = static_cast<Uint8>(10 + std::rand() % 25);
+      pt.b = static_cast<Uint8>(8 + std::rand() % 18);
+    } else {
+      pt.r = static_cast<Uint8>(255);
+      pt.g = static_cast<Uint8>(35 + std::rand() % 40);
+      pt.b = static_cast<Uint8>(15 + std::rand() % 25);
+    }
+  }
+
+  m_particles.push_back(pt);
+}
+
+void Game::UpdateFallingObstacles(float dt) {
   const float camLeft = CameraX() - 200.0f;
+  const ObstacleStage trailStage = ResolveObstacleStage();
+
+  m_meteorTrailAcc += dt;
+  constexpr float kTrailInterval = 0.03f;
+  const bool spawnTrail = m_meteorTrailAcc >= kTrailInterval;
+  if (spawnTrail) m_meteorTrailAcc -= kTrailInterval;
+
   for (int id : m_fallingIds) {
     auto& crate = m_world.Get(id);
     if (!crate.active) continue;
-    if (crate.pos.x < camLeft) crate.active = false;
+    if (crate.pos.x < camLeft) {
+      crate.active = false;
+      continue;
+    }
+
+    if (spawnTrail && crate.vel.LenSq() > 64.0f) {
+      SpawnMeteorTrailParticle(crate.pos, crate.vel, trailStage);
+      if ((std::rand() % 100) < 35) {
+        SpawnMeteorTrailParticle(crate.pos, crate.vel, trailStage);
+      }
+    }
   }
 }
 
@@ -534,6 +629,15 @@ void Game::UpdateObstacles(float dt) {
     if (!body.active) continue;
     if (body.pos.x < camLeft) { body.active = false; continue; }
 
+    if (obs.bounceTimer < 0.0f) {
+      obs.bounceTimer -= dt;
+      if (obs.bounceTimer < -1.5f) {
+        SpawnParticles(body.pos, 6, 255, 160, 40);
+        body.active = false;
+      }
+      continue;
+    }
+
     if (obs.type == ObstacleType::Bounce) {
       obs.bounceTimer += dt;
       if (obs.bounceTimer > 1.2f && body.onGround) {
@@ -542,17 +646,8 @@ void Game::UpdateObstacles(float dt) {
       }
     } else if (obs.type == ObstacleType::Moving) {
       obs.moveTimer += dt;
-      // 사인파로 앞뒤 이동
       body.pos.x = obs.moveOriginX + std::sin(obs.moveTimer * 2.0f) * obs.moveRange;
       body.vel.x = 0.0f;
-    }
-    // 날아가는 상자 처리 (bounceTimer == -1)
-    if (obs.bounceTimer < 0.0f) {
-      obs.bounceTimer -= dt;
-      if (obs.bounceTimer < -1.5f) {
-        SpawnParticles(body.pos, 6, 255, 160, 40);
-        body.active = false;
-      }
     }
   }
 }
@@ -1175,11 +1270,15 @@ void Game::Restart() {
   m_patternIndex           = 0;
   m_fallingSpawnTimer      = 0.0f;
   m_fallingSpawnInterval   = 8.0f;
+  m_meteorTrailAcc         = 0.0f;
   m_nextItemX              = 300.0f;
   m_stageNotifyTimer       = 0.0f;
   m_stageNotifyNum         = 0;
   m_stage2Notified         = false;
+  m_stage3Notified         = false;
   m_glacierTransitionDone  = false;
+  m_emeraldTransitionDone  = false;
+  m_transitionTargetStage  = 2;
   m_stageTransitionPlaying = false;
   m_stageTransitionT       = 0.0f;
   m_cleared                = false;
@@ -1224,18 +1323,35 @@ Vec2 Game::MouseWorldPos(const InputState& input) const {
 }
 
 void Game::UpdateStageTransition(float dt) {
-  if (!m_started || !m_glacier.IsLoaded()) return;
+  if (!m_started) return;
 
   if (m_distance < kGlacierStageStartM - 100.0f) {
     m_glacierTransitionDone  = false;
+    m_emeraldTransitionDone  = false;
     m_stageTransitionPlaying = false;
     m_stageTransitionT       = 0.0f;
     return;
   }
 
-  if (!m_glacierTransitionDone && m_distance >= kGlacierStageStartM && !m_stageTransitionPlaying) {
-    m_stageTransitionPlaying = true;
-    m_stageTransitionT       = 0.0f;
+  if (m_distance < kEmeraldStageStartM - 100.0f) {
+    m_emeraldTransitionDone = false;
+    if (m_stageTransitionPlaying && m_transitionTargetStage == 3) {
+      m_stageTransitionPlaying = false;
+      m_stageTransitionT       = 0.0f;
+    }
+  }
+
+  if (!m_stageTransitionPlaying) {
+    if (!m_glacierTransitionDone && m_distance >= kGlacierStageStartM && m_glacier.IsLoaded()) {
+      m_stageTransitionPlaying = true;
+      m_stageTransitionT       = 0.0f;
+      m_transitionTargetStage  = 2;
+    } else if (m_glacierTransitionDone && !m_emeraldTransitionDone && m_distance >= kEmeraldStageStartM &&
+               m_emerald.IsLoaded()) {
+      m_stageTransitionPlaying = true;
+      m_stageTransitionT       = 0.0f;
+      m_transitionTargetStage  = 3;
+    }
   }
 
   if (!m_stageTransitionPlaying) return;
@@ -1244,12 +1360,42 @@ void Game::UpdateStageTransition(float dt) {
   if (m_stageTransitionT >= 1.0f) {
     m_stageTransitionT       = 1.0f;
     m_stageTransitionPlaying = false;
-    m_glacierTransitionDone  = true;
+    if (m_transitionTargetStage == 3)
+      m_emeraldTransitionDone = true;
+    else
+      m_glacierTransitionDone = true;
   }
 }
 
-void Game::DrawStageBackground(SDL_Renderer* r, float camX, float groundY, bool useGlacier) const {
-  if (useGlacier) {
+Game::VisualStage Game::ResolveVisualStage() const {
+  if (m_stageTransitionPlaying) {
+    if (m_transitionTargetStage == 3)
+      return m_stageTransitionT >= 0.5f ? VisualStage::Emerald : VisualStage::Glacier;
+    return m_stageTransitionT >= 0.5f ? VisualStage::Glacier : VisualStage::Mars;
+  }
+  if (m_emeraldTransitionDone && m_distance >= kEmeraldStageStartM) return VisualStage::Emerald;
+  if (m_glacierTransitionDone && m_distance >= kGlacierStageStartM) return VisualStage::Glacier;
+  return VisualStage::Mars;
+}
+
+ObstacleStage Game::ResolveObstacleStage() const {
+  switch (ResolveVisualStage()) {
+  case VisualStage::Emerald: return ObstacleStage::Emerald;
+  case VisualStage::Glacier: return ObstacleStage::Glacier;
+  default: return ObstacleStage::Mars;
+  }
+}
+
+void Game::DrawStageBackground(SDL_Renderer* r, float camX, float groundY, VisualStage stage) const {
+  if (stage == VisualStage::Emerald) {
+    if (!m_emerald.IsDrawReady()) return;
+    m_emerald.DrawParallaxBackground(r, m_w, m_h, camX, groundY);
+    m_emerald.DrawTerrain(r, m_w, m_h, camX, groundY);
+    m_emerald.DrawParallaxNear(r, m_w, m_h, camX, groundY);
+    m_emerald.DrawStageObjects(r, m_w, m_h, camX, groundY);
+    return;
+  }
+  if (stage == VisualStage::Glacier) {
     if (!m_glacier.IsDrawReady()) return;
     m_glacier.DrawParallaxBackground(r, m_w, m_h, camX, groundY);
     m_glacier.DrawTerrain(r, m_w, m_h, camX, groundY);
@@ -1759,10 +1905,14 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   const bool inStartGrace = m_startGraceLeft > 0.0f;
 
   if (!inStartGrace) {
-    m_distance    += m_scrollSpeed * dt;
+    const float distStep = m_scrollSpeed * dt;
+    m_distance    += distStep;
     m_elapsed     += dt;
     m_scrollSpeed  = 240.0f + m_elapsed * 1.5f;
+    m_hp = std::max(0.0f, m_hp - distStep / kHpSurvivalDistanceM);
+    if (m_hp <= 0.0f) TriggerGameOver();
   }
+
   m_score = static_cast<int>(m_distance / 10.0f) + m_bombKillCount * 50;
 
   if (!m_stage2Notified && m_distance >= kGlacierStageStartM) {
@@ -1770,9 +1920,11 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
     m_stageNotifyNum   = 2;
     m_stageNotifyTimer = kStageNotifyDuration;
   }
-
-  m_hp = std::max(0.0f, m_hp - dt * 0.02f);
-  if (m_hp <= 0.0f) TriggerGameOver();
+  if (!m_stage3Notified && m_distance >= kEmeraldStageStartM) {
+    m_stage3Notified   = true;
+    m_stageNotifyNum   = 3;
+    m_stageNotifyTimer = kStageNotifyDuration;
+  }
 
   m_staminaRewind = std::min(1.5f, m_staminaRewind + dt * 0.15f);
 
@@ -1787,7 +1939,7 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
 
   // Spawn ahead at the map horizon even during start grace so obstacles approach naturally.
   UpdateSpawn();
-  UpdateFallingObstacles();
+  UpdateFallingObstacles(dt);
   UpdateObstacles(dt);
   UpdateItems(dt);
   UpdateParticles(dt);
@@ -1977,24 +2129,21 @@ void Game::Render(SDL_Renderer* r) const {
 
   m_stage.EnsureUploaded(r);
   if (m_glacier.IsLoaded()) m_glacier.EnsureUploaded(r);
+  if (m_emerald.IsLoaded()) m_emerald.EnsureUploaded(r);
   m_itemSprites.EnsureUploaded(r);
 
-  bool useGlacier = false;
-  if (m_stageTransitionPlaying && m_glacier.IsDrawReady())
-    useGlacier = m_stageTransitionT >= 0.5f;
-  else if (m_glacierTransitionDone && m_glacier.IsDrawReady() && m_distance >= kGlacierStageStartM)
-    useGlacier = true;
-
-  if (!useGlacier) m_obstacleSprites.EnsureUploaded(r);
+  const VisualStage visualStage = ResolveVisualStage();
+  const ObstacleStage obstacleStage = ResolveObstacleStage();
+  m_obstacleSprites.EnsureUploaded(r, obstacleStage);
 
   float blackHoleBackdrop = 1.0f;
-  if (useGlacier) {
+  if (visualStage != VisualStage::Mars) {
     blackHoleBackdrop = 0.0f;
-  } else if (m_stageTransitionPlaying) {
+  } else if (m_stageTransitionPlaying && m_transitionTargetStage == 2) {
     blackHoleBackdrop = 1.0f - std::clamp(m_stageTransitionT, 0.0f, 1.0f);
   }
 
-  DrawStageBackground(r, camX, groundY, useGlacier);
+  DrawStageBackground(r, camX, groundY, visualStage);
 
   DrawRewindGhosts(r, camX);
   DrawRewindVortex(r, camX);
@@ -2025,7 +2174,7 @@ void Game::Render(SDL_Renderer* r) const {
   }
 
   // 장애물 렌더링
-  const bool marsObstacleArt = !useGlacier && m_obstacleSprites.IsReady();
+  const bool obstacleArt = m_obstacleSprites.IsReady(obstacleStage);
   for (const auto& obs : m_obstacles) {
     const auto& body = m_world.Get(obs.bodyId);
     if (!body.active) continue;
@@ -2033,12 +2182,12 @@ void Game::Render(SDL_Renderer* r) const {
     const float sy = body.pos.y;
     const float rad = body.circle.radius;
 
-    if (marsObstacleArt) {
+    if (obstacleArt) {
       const ObstacleSpriteId spriteId = ObstacleSpriteFor(obs.type);
       if (obs.type == ObstacleType::Ceiling) {
-        m_obstacleSprites.DrawFromTop(r, spriteId, sx, 0.0f, sy + rad);
+        m_obstacleSprites.DrawFromTop(r, obstacleStage, spriteId, sx, 0.0f, sy + rad);
       } else {
-        m_obstacleSprites.DrawGrounded(r, spriteId, sx, sy + rad, ObstacleSpriteHeight(obs.type, rad));
+        m_obstacleSprites.DrawGrounded(r, obstacleStage, spriteId, sx, sy + rad, ObstacleSpriteHeight(obs.type, rad));
       }
       continue;
     }
@@ -2104,8 +2253,8 @@ void Game::Render(SDL_Renderer* r) const {
     const float sy = crate.pos.y;
     const float rad = crate.circle.radius;
 
-    if (marsObstacleArt) {
-      m_obstacleSprites.DrawCentered(r, ObstacleSpriteId::Falling, sx, sy, rad * 2.8f);
+    if (obstacleArt) {
+      m_obstacleSprites.DrawCentered(r, obstacleStage, ObstacleSpriteId::Falling, sx, sy, rad * 2.8f);
     } else {
       SDL_SetRenderDrawColor(r, 150, 80, 220, 255);
       SDL_Rect rc = RectFromCircle({sx, sy}, rad);

@@ -41,8 +41,10 @@ add_executable(chrono_rush_demo
   src/game/Game.cpp
   src/game/StageMap.cpp
   src/game/StageGlacier.cpp
+  src/game/StageEmerald.cpp
   src/render/UiText.cpp
   src/render/VfxLibrary.cpp
+  src/render/SpriteOutline.cpp
 )
 
 target_include_directories(chrono_rush_demo PRIVATE

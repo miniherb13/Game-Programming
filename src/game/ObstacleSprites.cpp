@@ -1,6 +1,7 @@
 #include "game/ObstacleSprites.h"
 
 #include "core/Log.h"
+#include "render/SpriteOutline.h"
 
 #include "stb_image.h"
 
@@ -29,17 +30,17 @@ struct PixelBounds {
   int h = 0;
 };
 
-std::vector<std::string> CandidatePaths(const char* filename) {
+std::vector<std::string> CandidatePaths(const char* folder, const char* filename) {
   std::vector<std::string> paths;
-  paths.emplace_back(std::string("assets/stages/mars/obstacles/") + filename);
+  paths.emplace_back(std::string(folder) + filename);
 
   if (char* base = SDL_GetBasePath()) {
-    paths.emplace_back(std::string(base) + "assets/stages/mars/obstacles/" + filename);
+    paths.emplace_back(std::string(base) + folder + filename);
     SDL_free(base);
   }
 
-  paths.emplace_back(std::string("../assets/stages/mars/obstacles/") + filename);
-  paths.emplace_back(std::string("../../assets/stages/mars/obstacles/") + filename);
+  paths.emplace_back(std::string("../") + folder + filename);
+  paths.emplace_back(std::string("../../") + folder + filename);
   return paths;
 }
 
@@ -139,73 +140,87 @@ PixelBounds ComputeContentBounds(const std::vector<unsigned char>& rgba, int w, 
   return out;
 }
 
-void DrawWithWhiteOutline(SDL_Renderer* renderer, SDL_Texture* texture, const SDL_Rect& src, SDL_Rect dst) {
-  if (!renderer || !texture) return;
-
-  static constexpr int kOffsets[][2] = {
-      {-2, 0}, {2, 0}, {0, -2}, {0, 2}, {-2, -2}, {2, -2}, {-2, 2}, {2, 2},
-      {-1, 0}, {1, 0}, {0, -1}, {0, 1},  {-1, -1}, {1, -1}, {-1, 1}, {1, 1},
-  };
-
-  SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-  SDL_SetTextureColorMod(texture, 255, 255, 255);
-  SDL_SetTextureAlphaMod(texture, 255);
-
-  for (const auto& offset : kOffsets) {
-    SDL_Rect outline = dst;
-    outline.x += offset[0];
-    outline.y += offset[1];
-    SDL_RenderCopy(renderer, texture, &src, &outline);
+const char* StageFolder(ObstacleStage stage) {
+  switch (stage) {
+  case ObstacleStage::Mars: return "assets/stages/mars/obstacles/";
+  case ObstacleStage::Glacier: return "assets/stages/glacier/obstacles/";
+  case ObstacleStage::Emerald: return "assets/stages/emerald/obstacles/";
   }
+  return "assets/stages/mars/obstacles/";
+}
 
-  SDL_SetTextureColorMod(texture, 255, 255, 255);
-  SDL_SetTextureAlphaMod(texture, 255);
-  SDL_RenderCopy(renderer, texture, &src, &dst);
+const char* StageLabel(ObstacleStage stage) {
+  switch (stage) {
+  case ObstacleStage::Mars: return "Mars";
+  case ObstacleStage::Glacier: return "Glacier";
+  case ObstacleStage::Emerald: return "Emerald";
+  }
+  return "Mars";
 }
 
 } // namespace
 
-ObstacleSprites::~ObstacleSprites() {
+ObstacleSprites::SpriteEntry* ObstacleSprites::SpriteBank::Entry(ObstacleSpriteId id) {
+  switch (id) {
+  case ObstacleSpriteId::Normal: return &normal;
+  case ObstacleSpriteId::Tall: return &tall;
+  case ObstacleSpriteId::Bounce: return &bounce;
+  case ObstacleSpriteId::Spike: return &spike;
+  case ObstacleSpriteId::Triangle: return &triangle;
+  case ObstacleSpriteId::Ceiling: return &ceiling;
+  case ObstacleSpriteId::Moving: return &moving;
+  case ObstacleSpriteId::Falling: return &falling;
+  }
+  return nullptr;
+}
+
+const ObstacleSprites::SpriteEntry* ObstacleSprites::SpriteBank::Entry(ObstacleSpriteId id) const {
+  return const_cast<SpriteBank*>(this)->Entry(id);
+}
+
+void ObstacleSprites::SpriteBank::DestroyTextures() {
   const auto destroy = [](SpriteEntry& entry) {
     if (entry.tex.texture) {
       SDL_DestroyTexture(static_cast<SDL_Texture*>(entry.tex.texture));
       entry.tex.texture = nullptr;
     }
   };
-  destroy(m_normal);
-  destroy(m_tall);
-  destroy(m_bounce);
-  destroy(m_spike);
-  destroy(m_triangle);
-  destroy(m_ceiling);
-  destroy(m_moving);
-  destroy(m_falling);
+  destroy(normal);
+  destroy(tall);
+  destroy(bounce);
+  destroy(spike);
+  destroy(triangle);
+  destroy(ceiling);
+  destroy(moving);
+  destroy(falling);
 }
 
-ObstacleSprites::SpriteTex* ObstacleSprites::TexFor(ObstacleSpriteId id) {
-  switch (id) {
-  case ObstacleSpriteId::Normal: return &m_normal.tex;
-  case ObstacleSpriteId::Tall: return &m_tall.tex;
-  case ObstacleSpriteId::Bounce: return &m_bounce.tex;
-  case ObstacleSpriteId::Spike: return &m_spike.tex;
-  case ObstacleSpriteId::Triangle: return &m_triangle.tex;
-  case ObstacleSpriteId::Ceiling: return &m_ceiling.tex;
-  case ObstacleSpriteId::Moving: return &m_moving.tex;
-  case ObstacleSpriteId::Falling: return &m_falling.tex;
+ObstacleSprites::~ObstacleSprites() {
+  m_mars.DestroyTextures();
+  m_glacier.DestroyTextures();
+  m_emerald.DestroyTextures();
+}
+
+ObstacleSprites::SpriteBank* ObstacleSprites::Bank(ObstacleStage stage) {
+  switch (stage) {
+  case ObstacleStage::Mars: return &m_mars;
+  case ObstacleStage::Glacier: return &m_glacier;
+  case ObstacleStage::Emerald: return &m_emerald;
   }
-  return nullptr;
+  return &m_mars;
 }
 
-const ObstacleSprites::SpriteTex* ObstacleSprites::TexFor(ObstacleSpriteId id) const {
-  return const_cast<ObstacleSprites*>(this)->TexFor(id);
+const ObstacleSprites::SpriteBank* ObstacleSprites::Bank(ObstacleStage stage) const {
+  return const_cast<ObstacleSprites*>(this)->Bank(stage);
 }
 
-bool ObstacleSprites::LoadFile(const char* filename,
+bool ObstacleSprites::LoadFile(const char* folder,
+                               const char* filename,
                                std::vector<unsigned char>& rgba,
                                int& w,
                                int& h,
                                CropRect& outBounds) const {
-  for (const auto& path : CandidatePaths(filename)) {
+  for (const auto& path : CandidatePaths(folder, filename)) {
     int comp = 0;
     unsigned char* pixels = stbi_load(path.c_str(), &w, &h, &comp, 4);
     if (!pixels) continue;
@@ -213,39 +228,47 @@ bool ObstacleSprites::LoadFile(const char* filename,
     rgba.assign(pixels, pixels + static_cast<std::size_t>(w * h * 4));
     stbi_image_free(pixels);
     RemoveBackground(rgba, w, h);
+    AddBoldWhiteOutline(rgba, w, h);
     const PixelBounds bounds = ComputeContentBounds(rgba, w, h);
     outBounds.x = bounds.x;
     outBounds.y = bounds.y;
     outBounds.w = bounds.w;
     outBounds.h = bounds.h;
     Log(LogLevel::Info,
-        "Obstacle sprite loaded: " + path + " (" + std::to_string(w) + "x" + std::to_string(h) + ", content " +
-            std::to_string(outBounds.w) + "x" + std::to_string(outBounds.h) + ")");
+        std::string("Obstacle sprite loaded: ") + folder + filename + " (" + std::to_string(w) + "x" +
+            std::to_string(h) + ", content " + std::to_string(outBounds.w) + "x" + std::to_string(outBounds.h) + ")");
     return true;
   }
   return false;
 }
 
-bool ObstacleSprites::Load() {
+bool ObstacleSprites::LoadBank(SpriteBank& bank, const char* folder) const {
   const auto loadOne = [&](SpriteEntry& entry) {
-    entry.loaded = LoadFile(entry.filename, entry.pixels, entry.w, entry.h, entry.crop);
+    entry.loaded = LoadFile(folder, entry.filename, entry.pixels, entry.w, entry.h, entry.crop);
     if (!entry.loaded) {
-      Log(LogLevel::Warn, std::string("assets/stages/mars/obstacles/") + entry.filename + " missing");
+      Log(LogLevel::Warn, std::string(folder) + entry.filename + " missing");
     }
     return entry.loaded;
   };
 
   int count = 0;
-  if (loadOne(m_normal)) ++count;
-  if (loadOne(m_tall)) ++count;
-  if (loadOne(m_bounce)) ++count;
-  if (loadOne(m_spike)) ++count;
-  if (loadOne(m_triangle)) ++count;
-  if (loadOne(m_ceiling)) ++count;
-  if (loadOne(m_moving)) ++count;
-  if (loadOne(m_falling)) ++count;
+  if (loadOne(bank.normal)) ++count;
+  if (loadOne(bank.tall)) ++count;
+  if (loadOne(bank.bounce)) ++count;
+  if (loadOne(bank.spike)) ++count;
+  if (loadOne(bank.triangle)) ++count;
+  if (loadOne(bank.ceiling)) ++count;
+  if (loadOne(bank.moving)) ++count;
+  if (loadOne(bank.falling)) ++count;
 
   return count > 0;
+}
+
+bool ObstacleSprites::Load() {
+  const bool mars = LoadBank(m_mars, StageFolder(ObstacleStage::Mars));
+  const bool glacier = LoadBank(m_glacier, StageFolder(ObstacleStage::Glacier));
+  const bool emerald = LoadBank(m_emerald, StageFolder(ObstacleStage::Emerald));
+  return mars || glacier || emerald;
 }
 
 bool ObstacleSprites::UploadRgba(SDL_Renderer* renderer, const unsigned char* rgba, int w, int h, SpriteTex& out) const {
@@ -270,9 +293,9 @@ bool ObstacleSprites::UploadRgba(SDL_Renderer* renderer, const unsigned char* rg
   return true;
 }
 
-void ObstacleSprites::EnsureUploaded(SDL_Renderer* renderer) const {
-  if (m_uploadAttempted || !renderer) return;
-  m_uploadAttempted = true;
+void ObstacleSprites::EnsureBankUploaded(SDL_Renderer* renderer, SpriteBank& bank, ObstacleStage stage) const {
+  if (bank.uploadAttempted || !renderer) return;
+  bank.uploadAttempted = true;
 
   const auto uploadOne = [&](SpriteEntry& entry) {
     if (!entry.loaded || entry.pixels.empty()) return true;
@@ -284,18 +307,30 @@ void ObstacleSprites::EnsureUploaded(SDL_Renderer* renderer) const {
     return true;
   };
 
-  if (!uploadOne(m_normal)) return;
-  if (!uploadOne(m_tall)) return;
-  if (!uploadOne(m_bounce)) return;
-  if (!uploadOne(m_spike)) return;
-  if (!uploadOne(m_triangle)) return;
-  if (!uploadOne(m_ceiling)) return;
-  if (!uploadOne(m_moving)) return;
-  if (!uploadOne(m_falling)) return;
+  if (!uploadOne(bank.normal)) return;
+  if (!uploadOne(bank.tall)) return;
+  if (!uploadOne(bank.bounce)) return;
+  if (!uploadOne(bank.spike)) return;
+  if (!uploadOne(bank.triangle)) return;
+  if (!uploadOne(bank.ceiling)) return;
+  if (!uploadOne(bank.moving)) return;
+  if (!uploadOne(bank.falling)) return;
 
-  m_gpuReady = m_normal.tex.texture || m_tall.tex.texture || m_bounce.tex.texture || m_triangle.tex.texture ||
-               m_ceiling.tex.texture || m_moving.tex.texture || m_falling.tex.texture || m_spike.tex.texture;
-  if (m_gpuReady) Log(LogLevel::Info, "Mars obstacle sprites ready");
+  bank.gpuReady = bank.normal.tex.texture || bank.tall.tex.texture || bank.bounce.tex.texture ||
+                  bank.triangle.tex.texture || bank.ceiling.tex.texture || bank.moving.tex.texture ||
+                  bank.falling.tex.texture || bank.spike.tex.texture;
+  if (bank.gpuReady) {
+    Log(LogLevel::Info, std::string(StageLabel(stage)) + " obstacle sprites ready");
+  }
+}
+
+void ObstacleSprites::EnsureUploaded(SDL_Renderer* renderer, ObstacleStage stage) const {
+  EnsureBankUploaded(renderer, *const_cast<ObstacleSprites*>(this)->Bank(stage), stage);
+}
+
+bool ObstacleSprites::IsReady(ObstacleStage stage) const {
+  const SpriteBank* bank = Bank(stage);
+  return bank && bank->gpuReady;
 }
 
 void ObstacleSprites::BlitScaled(SDL_Renderer* renderer,
@@ -321,7 +356,7 @@ void ObstacleSprites::BlitScaled(SDL_Renderer* renderer,
   dst.y = anchorBottom ? static_cast<int>(anchorY - static_cast<float>(destH))
                        : static_cast<int>(anchorY);
 
-  DrawWithWhiteOutline(renderer, static_cast<SDL_Texture*>(sprite.texture), src, dst);
+  SDL_RenderCopy(renderer, static_cast<SDL_Texture*>(sprite.texture), &src, &dst);
 }
 
 void ObstacleSprites::BlitScaledCentered(SDL_Renderer* renderer,
@@ -345,40 +380,91 @@ void ObstacleSprites::BlitScaledCentered(SDL_Renderer* renderer,
   dst.x = static_cast<int>(screenX - static_cast<float>(destW) * 0.5f);
   dst.y = static_cast<int>(screenY - static_cast<float>(destH) * 0.5f);
 
-  DrawWithWhiteOutline(renderer, static_cast<SDL_Texture*>(sprite.texture), src, dst);
+  SDL_RenderCopy(renderer, static_cast<SDL_Texture*>(sprite.texture), &src, &dst);
+}
+
+void ObstacleSprites::BlitScaledCenteredRotated(SDL_Renderer* renderer,
+                                                const SpriteTex& sprite,
+                                                float screenX,
+                                                float screenY,
+                                                float displaySize,
+                                                float rotationDeg) {
+  if (!sprite.texture || sprite.w <= 0 || sprite.h <= 0) return;
+
+  const CropRect& c = sprite.crop;
+  if (c.w <= 0 || c.h <= 0) return;
+
+  const int destH = std::max(1, static_cast<int>(displaySize));
+  const int destW = std::max(1, static_cast<int>(std::lround(static_cast<float>(c.w) * static_cast<float>(destH) /
+                                                                 static_cast<float>(c.h))));
+
+  SDL_Rect src{c.x, c.y, c.w, c.h};
+  SDL_Rect dst{};
+  dst.w = destW;
+  dst.h = destH;
+  dst.x = static_cast<int>(screenX - static_cast<float>(destW) * 0.5f);
+  dst.y = static_cast<int>(screenY - static_cast<float>(destH) * 0.5f);
+
+  SDL_RenderCopyEx(renderer,
+                   static_cast<SDL_Texture*>(sprite.texture),
+                   &src,
+                   &dst,
+                   rotationDeg,
+                   nullptr,
+                   SDL_FLIP_NONE);
 }
 
 void ObstacleSprites::DrawGrounded(SDL_Renderer* renderer,
+                                   ObstacleStage stage,
                                    ObstacleSpriteId id,
                                    float screenX,
                                    float footY,
                                    float displayHeight) const {
-  if (!m_gpuReady) return;
-  const SpriteTex* sprite = TexFor(id);
-  if (!sprite || !sprite->texture) return;
-  BlitScaled(renderer, *sprite, screenX, footY, displayHeight, true);
+  const SpriteBank* bank = Bank(stage);
+  if (!bank || !bank->gpuReady) return;
+  const SpriteEntry* entry = bank->Entry(id);
+  if (!entry || !entry->tex.texture) return;
+  BlitScaled(renderer, entry->tex, screenX, footY, displayHeight, true);
 }
 
 void ObstacleSprites::DrawFromTop(SDL_Renderer* renderer,
+                                  ObstacleStage stage,
                                   ObstacleSpriteId id,
                                   float screenX,
                                   float topY,
                                   float displayHeight) const {
-  if (!m_gpuReady) return;
-  const SpriteTex* sprite = TexFor(id);
-  if (!sprite || !sprite->texture) return;
-  BlitScaled(renderer, *sprite, screenX, topY, displayHeight, false);
+  const SpriteBank* bank = Bank(stage);
+  if (!bank || !bank->gpuReady) return;
+  const SpriteEntry* entry = bank->Entry(id);
+  if (!entry || !entry->tex.texture) return;
+  BlitScaled(renderer, entry->tex, screenX, topY, displayHeight, false);
 }
 
 void ObstacleSprites::DrawCentered(SDL_Renderer* renderer,
-                                     ObstacleSpriteId id,
-                                     float screenX,
-                                     float screenY,
-                                     float displaySize) const {
-  if (!m_gpuReady) return;
-  const SpriteTex* sprite = TexFor(id);
-  if (!sprite || !sprite->texture) return;
-  BlitScaledCentered(renderer, *sprite, screenX, screenY, displaySize);
+                                   ObstacleStage stage,
+                                   ObstacleSpriteId id,
+                                   float screenX,
+                                   float screenY,
+                                   float displaySize) const {
+  const SpriteBank* bank = Bank(stage);
+  if (!bank || !bank->gpuReady) return;
+  const SpriteEntry* entry = bank->Entry(id);
+  if (!entry || !entry->tex.texture) return;
+  BlitScaledCentered(renderer, entry->tex, screenX, screenY, displaySize);
+}
+
+void ObstacleSprites::DrawCenteredRotated(SDL_Renderer* renderer,
+                                          ObstacleStage stage,
+                                          ObstacleSpriteId id,
+                                          float screenX,
+                                          float screenY,
+                                          float displaySize,
+                                          float rotationDeg) const {
+  const SpriteBank* bank = Bank(stage);
+  if (!bank || !bank->gpuReady) return;
+  const SpriteEntry* entry = bank->Entry(id);
+  if (!entry || !entry->tex.texture) return;
+  BlitScaledCenteredRotated(renderer, entry->tex, screenX, screenY, displaySize, rotationDeg);
 }
 
 } // namespace cr

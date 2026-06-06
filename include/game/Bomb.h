@@ -90,7 +90,7 @@ public:
   bool IsCharging() const { return m_charging; }
   void CancelCharge();
 
-  void SetExplosionHandler(std::function<void(Vec2 center)> handler);
+  void SetExplosionHandler(std::function<void(Vec2 center, int hitObstacleId)> handler);
 
   void Render(SDL_Renderer* r,
               float cameraX,
@@ -119,12 +119,12 @@ private:
 
   int AllocateSlot();
   void ArmSlot(int slotIndex, PhysicsWorld& world, const Body& player, Vec2 velocity);
-  void Explode(int slotIndex, PhysicsWorld& world, int playerId);
+  void Explode(int slotIndex, PhysicsWorld& world, int playerId, int hitObstacleId = -1);
   void ApplyExplosionImpulse(PhysicsWorld& world, int playerId, Vec2 center, float radius, float impulse);
 
   std::vector<BombSlot> m_slots;
   std::vector<int> m_bodyIds;
-  std::function<void(Vec2 center)> m_onExplosion;
+  std::function<void(Vec2 center, int hitObstacleId)> m_onExplosion;
 
   float m_chargeTime = 0.0f;
   bool m_charging = false;

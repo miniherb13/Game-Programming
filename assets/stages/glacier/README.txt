@@ -9,5 +9,5 @@ Glacier stage (planet 2) — place 7 PNG files here:
   glacier_hazards.png
 
 Each stage is 5000m (Game::kStageLengthM, demo).
-Mars: 0–5000m, Glacier: 5000–10000m (StageGlacier::kWorldOffsetX = 5000).
+Mars: 0–5000m, Glacier: 5000–10000m, Emerald: 10000–15000m (StageGlacier::kWorldOffsetX = 5000).
 Rebuild copies this folder to build/assets/stages/glacier/
