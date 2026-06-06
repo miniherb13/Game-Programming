@@ -43,21 +43,33 @@ int App::Run() {
 
   Input input;
   Game game(W, H);
+  game.InitRenderer(renderer);
 
   constexpr float fixedDt = 1.0f / 60.0f;
   double acc = 0.0;
 
   while (!game.WantsQuit()) {
     const double dt = clock.TickSeconds();
-    acc += dt;
 
     input.BeginFrame();
     input.Pump();
+    input.ApplyPending();
+    game.HandleInput(static_cast<float>(dt), input);
 
-    // Fixed update
-    while (acc >= fixedDt) {
-      game.FixedUpdate(fixedDt, input.State());
-      acc -= fixedDt;
+    bool hadFixedStep = false;
+    if (game.IsGameplayActive()) {
+      acc += dt;
+      while (acc >= fixedDt) {
+        input.ApplyPending();
+        game.FixedUpdate(fixedDt, input.State(), input);
+        acc -= fixedDt;
+        hadFixedStep = true;
+      }
+      input.FinishGameplayFrame(hadFixedStep);
+      game.UpdateVisualEffects(static_cast<float>(dt));
+    } else {
+      acc = 0.0;
+      input.ClearGameplayPending();
     }
 
     SDL_SetRenderDrawColor(renderer, 12, 12, 16, 255);

@@ -4,16 +4,24 @@
 
 ## Build
 
+### Windows (권장)
+
+```powershell
+.\build.ps1
+```
+
+빌드 후 실행: `.\build.ps1 -Run` 또는 `build\chrono_rush_demo.exe` 더블클릭
+
+MSVC 경로(vcvars)를 자동 설정합니다. `build.cmd`도 동일합니다.
+
 ### Windows (Visual Studio)
 
 ```bash
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Debug
+cmake -S . -B build-vs -G "Visual Studio 17 2022" -A x64
+cmake --build build-vs --config Debug
 ```
 
-실행 파일은 보통 `build/Debug/chrono_rush_demo.exe`에 생성됩니다.
-
-### Windows (Ninja)
+### Windows (Ninja — Developer Shell)
 
 ```bash
 cmake -S . -B build -G Ninja
@@ -22,11 +30,15 @@ cmake --build build
 
 ## Controls
 
-- `마우스 드래그`: 조준
-- `X`: 폭탄 던지기
+- 플레이어: `idle`, `jump`, `run_0`~`run_1`(또는 ~`run_3`), `throw_0`~`throw_2` (`assets/player/`)
+- `X` 홀드: `throw_0`→`throw_1` 충전 / `X` 떼면 `throw_2` (0.35초)
+- `마우스 이동`: 폭탄 조준 방향(점선 궤도)
+- `X` 누르고 있기: 세기 충전(궤도·게이지 증가) → `X` 떼면 발사
+- 폭탄: `X` 홀드·발사, 폭발 시 인력장
 - `C`: 점프
-- `Z`: 시간 역행(3초 전으로)
-- `Esc`: 종료
+- `Z`: 시간 역행(한 번에 3초, 스태미나 3 소모, 점프 포즈·화면 세로 중앙)
+- `Space`: 타이틀에서 게임 시작 / 일시정지 중 재개
+- `Esc`: 일시정지 → 일시정지 중 `Esc` 한 번 더: 종료
 
 ## Repo structure
 
@@ -67,6 +79,9 @@ cmake --build build
 
 ### 사전 합의(필수 3가지)
 
-- **스냅샷 공통 포맷**: 최소 `active, pos, vel` + 객체별 추가 필드 목록
-- **객체 ID 정책**: 역행 동안 동일 객체를 식별하는 키(풀링/재활용 고려)
-- **삭제/풀링/폭발의 역행 규칙**: “되감으면 다시 살아나는가?” 기준을 1줄로 확정
+- **스냅샷 공통 포맷**: `BodySnapshot` — `active, pos, vel, onGround` + 객체별 추가 필드
+- **객체 ID 정책**: 폭탄/필드/상자는 고정 슬롯 인덱스(풀 bodyId는 슬롯에 묶임)
+- **역행 규칙**: 해당 프레임의 플레이어·폭탄·중력장·상자 상태를 그대로 복원. 폭발/필드 생성 이후 `Z`로 되감으면 그 이전 상태로 돌아감
+
+상세: [docs/snapshot-agreement.md](docs/snapshot-agreement.md)  
+팀원 B 작업 순서: [docs/team-b-tasks.md](docs/team-b-tasks.md)

@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/\uac8c\uc784\ud504\ub85c\uc81d\ud2b8/Game-Programming/build/cmake_install.cmake",
+		"D:/\uac8c\uc784\ud504\ub85c\uc81d\ud2b8/Game-Programming/build/_deps/sdl2-build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

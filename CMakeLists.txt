@@ -30,12 +30,32 @@ add_executable(chrono_rush_demo
   src/core/Log.cpp
   src/math/Vec2.cpp
   src/physics/PhysicsWorld.cpp
+  src/rewind/BodySnapshot.cpp
   src/rewind/RewindBuffer.cpp
+  src/rewind/Snapshot.cpp
+  src/game/Bomb.cpp
+  src/game/GravityField.cpp
+  src/game/PlayerSprite.cpp
+  src/game/ItemSprites.cpp
+  src/game/ObstacleSprites.cpp
   src/game/Game.cpp
+  src/game/StageMap.cpp
+  src/game/StageGlacier.cpp
+  src/game/StageEmerald.cpp
+  src/render/UiText.cpp
+  src/render/VfxLibrary.cpp
+  src/render/SpriteOutline.cpp
 )
 
 target_include_directories(chrono_rush_demo PRIVATE
   include
+  third_party
+)
+
+add_custom_command(TARGET chrono_rush_demo POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_SOURCE_DIR}/assets
+          $<TARGET_FILE_DIR:chrono_rush_demo>/assets
 )
 
 if(TARGET SDL2::SDL2-static)
@@ -51,8 +71,12 @@ else()
   message(FATAL_ERROR "SDL2 target not found after FetchContent.")
 endif()
 
+if(WIN32)
+  target_link_libraries(chrono_rush_demo PRIVATE gdi32)
+endif()
+
 if(MSVC)
-  target_compile_options(chrono_rush_demo PRIVATE /W4 /permissive-)
+  target_compile_options(chrono_rush_demo PRIVATE /W4 /permissive- /utf-8)
 else()
   target_compile_options(chrono_rush_demo PRIVATE -Wall -Wextra -Wpedantic)
 endif()
