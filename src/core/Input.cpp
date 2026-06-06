@@ -55,6 +55,10 @@ void Input::ConsumeThrowReleasedPending() {
   m_throwReleasedPending = false;
 }
 
+void Input::ConsumeSlowPending() {
+  m_slowPending = false;
+}
+
 void Input::Pump() {
   SDL_Event e;
   while (SDL_PollEvent(&e)) {

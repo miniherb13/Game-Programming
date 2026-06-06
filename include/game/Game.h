@@ -214,7 +214,6 @@ private:
 
   RewindBuffer  m_rewind;
   GameSnapshot  m_snapshotScratch{};
-  float m_stamina = 3.0f;
 
   InputState m_lastInput{};
 
