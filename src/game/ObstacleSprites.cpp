@@ -139,28 +139,42 @@ PixelBounds ComputeContentBounds(const std::vector<unsigned char>& rgba, int w, 
   return out;
 }
 
-void DrawWithWhiteOutline(SDL_Renderer* renderer, SDL_Texture* texture, const SDL_Rect& src, SDL_Rect dst) {
-  if (!renderer || !texture) return;
+bool IsSolidPixel(const std::vector<unsigned char>& rgba, int w, int h, int x, int y) {
+  if (x < 0 || x >= w || y < 0 || y >= h) return false;
+  return rgba[static_cast<std::size_t>((y * w + x) * 4 + 3)] > kAlphaVisible;
+}
 
-  static constexpr int kOffsets[][2] = {
-      {-2, 0}, {2, 0}, {0, -2}, {0, 2}, {-2, -2}, {2, -2}, {-2, 2}, {2, 2},
-      {-1, 0}, {1, 0}, {0, -1}, {0, 1},  {-1, -1}, {1, -1}, {-1, 1}, {1, 1},
-  };
+void AddWhiteOutlineRing(std::vector<unsigned char>& rgba, int w, int h, int ringPx = 2) {
+  if (rgba.empty() || w <= 0 || h <= 0 || ringPx <= 0) return;
 
-  SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-  SDL_SetTextureColorMod(texture, 255, 255, 255);
-  SDL_SetTextureAlphaMod(texture, 255);
+  const std::vector<unsigned char> src = rgba;
+  const int radiusSq = (ringPx + 1) * (ringPx + 1);
 
-  for (const auto& offset : kOffsets) {
-    SDL_Rect outline = dst;
-    outline.x += offset[0];
-    outline.y += offset[1];
-    SDL_RenderCopy(renderer, texture, &src, &outline);
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const std::size_t i = static_cast<std::size_t>((y * w + x) * 4);
+      if (src[i + 3] > kAlphaVisible) continue;
+
+      bool nearSolid = false;
+      for (int dy = -ringPx; dy <= ringPx && !nearSolid; ++dy) {
+        for (int dx = -ringPx; dx <= ringPx; ++dx) {
+          if (dx == 0 && dy == 0) continue;
+          if (dx * dx + dy * dy > radiusSq) continue;
+          if (IsSolidPixel(src, w, h, x + dx, y + dy)) {
+            nearSolid = true;
+            break;
+          }
+        }
+      }
+
+      if (nearSolid) {
+        rgba[i + 0] = 255;
+        rgba[i + 1] = 255;
+        rgba[i + 2] = 255;
+        rgba[i + 3] = 255;
+      }
+    }
   }
-
-  SDL_SetTextureColorMod(texture, 255, 255, 255);
-  SDL_SetTextureAlphaMod(texture, 255);
-  SDL_RenderCopy(renderer, texture, &src, &dst);
 }
 
 } // namespace
@@ -213,6 +227,7 @@ bool ObstacleSprites::LoadFile(const char* filename,
     rgba.assign(pixels, pixels + static_cast<std::size_t>(w * h * 4));
     stbi_image_free(pixels);
     RemoveBackground(rgba, w, h);
+    AddWhiteOutlineRing(rgba, w, h, 2);
     const PixelBounds bounds = ComputeContentBounds(rgba, w, h);
     outBounds.x = bounds.x;
     outBounds.y = bounds.y;
@@ -321,7 +336,7 @@ void ObstacleSprites::BlitScaled(SDL_Renderer* renderer,
   dst.y = anchorBottom ? static_cast<int>(anchorY - static_cast<float>(destH))
                        : static_cast<int>(anchorY);
 
-  DrawWithWhiteOutline(renderer, static_cast<SDL_Texture*>(sprite.texture), src, dst);
+  SDL_RenderCopy(renderer, static_cast<SDL_Texture*>(sprite.texture), &src, &dst);
 }
 
 void ObstacleSprites::BlitScaledCentered(SDL_Renderer* renderer,
@@ -345,7 +360,7 @@ void ObstacleSprites::BlitScaledCentered(SDL_Renderer* renderer,
   dst.x = static_cast<int>(screenX - static_cast<float>(destW) * 0.5f);
   dst.y = static_cast<int>(screenY - static_cast<float>(destH) * 0.5f);
 
-  DrawWithWhiteOutline(renderer, static_cast<SDL_Texture*>(sprite.texture), src, dst);
+  SDL_RenderCopy(renderer, static_cast<SDL_Texture*>(sprite.texture), &src, &dst);
 }
 
 void ObstacleSprites::DrawGrounded(SDL_Renderer* renderer,

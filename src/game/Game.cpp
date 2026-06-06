@@ -326,40 +326,41 @@ Game::Game(int width, int height)
   m_bombs.SetExplosionHandler([this](Vec2 center) {
     SpawnExplosionVfx(center);
     m_fields.SpawnBlackHole(center);
+    constexpr float kBlastRadius = 95.0f;
+
     for (auto& obs : m_obstacles) {
       auto& body = m_world.Get(obs.bodyId);
       if (!body.active) continue;
+      if (obs.type == ObstacleType::Ceiling) continue;
+
       const float dx   = body.pos.x - center.x;
       const float dy   = body.pos.y - center.y;
       const float dist = std::sqrt(dx * dx + dy * dy);
-      if (dist < 95.0f) {
+      if (dist >= kBlastRadius) continue;
+
+      const bool destroyNow =
+          obs.type == ObstacleType::Tall || dist <= body.circle.radius + 26.0f;
+
+      if (destroyNow) {
         SpawnParticles(body.pos, 12, 255, 160, 40);
+        body.active = false;
+        body.vel = {};
         m_score += 50;
         m_bombKillCount++;
-        if (dist < 60.0f) {
-          // 아주 가까우면 날아가다가 사라짐
-          const float force = 800.0f / (dist + 1.0f);
-          const float nx = dist > 0.0f ? dx / dist : 1.0f;
-          const float ny = dist > 0.0f ? dy / dist : 0.0f;
-          body.linearDamping = 0.1f;
-          body.groundFriction = 0.0f;
-          body.invMass = 1.0f / 1.8f;
-          body.vel.x += nx * force;
-          body.vel.y += ny * force - 200.0f;
-          // 1초 후 사라지게 타이머 설정 (obs에 저장)
-          obs.bounceTimer = -1.0f; // -1 = 날아가는 중
-        } else {
-          // 범위 안이지만 멀면 그냥 날아감
-          const float force = 400.0f / (dist + 1.0f);
-          body.linearDamping = 0.1f;
-          body.groundFriction = 0.0f;
-          const float nx = dist > 0.0f ? dx / dist : 1.0f;
-          body.invMass = 1.0f / 1.8f;
-          const float ny = dist > 0.0f ? dy / dist : 0.0f;
-          body.vel.x += nx * force;
-          body.vel.y += ny * force - 150.0f;
-        }
+        continue;
       }
+
+      if (body.motion == MotionType::Static || body.invMass <= 0.0f) continue;
+
+      const float nx = dist > 0.0f ? dx / dist : 1.0f;
+      const float ny = dist > 0.0f ? dy / dist : 0.0f;
+      const float force = 520.0f / (dist + 1.0f);
+      body.linearDamping  = 0.1f;
+      body.groundFriction = 0.0f;
+      body.invMass        = 1.0f / 1.8f;
+      body.vel.x += nx * force;
+      body.vel.y += ny * force - 180.0f;
+      obs.bounceTimer = -1.0f;
     }
     for (int id : m_fallingIds) {
       auto& crate = m_world.Get(id);
@@ -534,6 +535,15 @@ void Game::UpdateObstacles(float dt) {
     if (!body.active) continue;
     if (body.pos.x < camLeft) { body.active = false; continue; }
 
+    if (obs.bounceTimer < 0.0f) {
+      obs.bounceTimer -= dt;
+      if (obs.bounceTimer < -1.5f) {
+        SpawnParticles(body.pos, 6, 255, 160, 40);
+        body.active = false;
+      }
+      continue;
+    }
+
     if (obs.type == ObstacleType::Bounce) {
       obs.bounceTimer += dt;
       if (obs.bounceTimer > 1.2f && body.onGround) {
@@ -542,17 +552,8 @@ void Game::UpdateObstacles(float dt) {
       }
     } else if (obs.type == ObstacleType::Moving) {
       obs.moveTimer += dt;
-      // 사인파로 앞뒤 이동
       body.pos.x = obs.moveOriginX + std::sin(obs.moveTimer * 2.0f) * obs.moveRange;
       body.vel.x = 0.0f;
-    }
-    // 날아가는 상자 처리 (bounceTimer == -1)
-    if (obs.bounceTimer < 0.0f) {
-      obs.bounceTimer -= dt;
-      if (obs.bounceTimer < -1.5f) {
-        SpawnParticles(body.pos, 6, 255, 160, 40);
-        body.active = false;
-      }
     }
   }
 }
