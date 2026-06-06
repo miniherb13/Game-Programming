@@ -36,6 +36,7 @@ struct Body {
   BodyKind kind = BodyKind::Default;
   MotionType motion = MotionType::Dynamic;
   bool lockVelX = false;
+  bool ignoreObstacleContact = false;
 
   ShapeType shapeType = ShapeType::Circle;
   CircleShape circle{};

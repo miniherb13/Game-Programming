@@ -1036,18 +1036,6 @@ void VfxLibrary::DrawVignette(SDL_Renderer* r, int w, int h, Uint8 alpha, Uint8 
   SDL_RenderFillRect(r, &bottom);
   SDL_RenderFillRect(r, &left);
   SDL_RenderFillRect(r, &right);
-
-  const Uint8 cornerA = static_cast<Uint8>(alpha * 0.65f);
-  SDL_SetRenderDrawColor(r, 0, 0, 0, cornerA);
-  constexpr int corner = 140;
-  SDL_Rect tl{0, 0, corner, corner};
-  SDL_Rect tr{w - corner, 0, corner, corner};
-  SDL_Rect bl{0, h - corner, corner, corner};
-  SDL_Rect br{w - corner, h - corner, corner, corner};
-  SDL_RenderFillRect(r, &tl);
-  SDL_RenderFillRect(r, &tr);
-  SDL_RenderFillRect(r, &bl);
-  SDL_RenderFillRect(r, &br);
 }
 
 } // namespace cr

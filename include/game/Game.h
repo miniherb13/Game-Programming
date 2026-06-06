@@ -106,7 +106,7 @@ public:
   bool WantsQuit() const { return m_quit; }
   bool IsPaused() const { return m_paused; }
   bool IsStarted() const { return m_started; }
-  bool IsGameplayActive() const { return m_started && !m_paused; }
+  bool IsGameplayActive() const { return m_started && !m_paused && !m_showControls; }
 
 private:
   void SpawnProps();
@@ -140,7 +140,11 @@ private:
   float CameraX() const;
   float SpawnHorizonX() const;
   Vec2 MouseWorldPos(const InputState& input) const;
-  void DrawTitleOverlay(SDL_Renderer* r) const;
+  void DrawTitleBackground(SDL_Renderer* r) const;
+  void DrawTitleSplashPrompt(SDL_Renderer* r) const;
+  void DrawControlsOverlay(SDL_Renderer* r) const;
+  void DrawShieldAura(SDL_Renderer* r, float screenX, float screenY, float playerRadius) const;
+  void EnsureTitleBackground(SDL_Renderer* renderer) const;
   void DrawPauseOverlay(SDL_Renderer* r) const;
   void DrawGameOverOverlay(SDL_Renderer* r) const;
   void DrawStageNotify(SDL_Renderer* r) const;
@@ -171,7 +175,14 @@ private:
   bool m_quit    = false;
   bool m_paused  = false;
   bool m_started = false;
+  bool m_showControls = false;
   float m_uiBlinkPhase = 0.0f;
+  float m_shieldOrbitPhase = 0.0f;
+
+  mutable void* m_titleTexture = nullptr;
+  mutable int m_titleW = 0;
+  mutable int m_titleH = 0;
+  mutable bool m_titleLoadAttempted = false;
 
   UiText m_ui;
   PhysicsWorld m_world;
@@ -224,7 +235,7 @@ private:
   bool  m_gameOver    = false;
   float m_hp          = 1.0f;
   float m_hitCooldown = 0.0f;
-  float m_shieldTimer = 0.0f;
+  float m_shieldTimer     = 0.0f;
   float m_blinkTimer  = 0.0f;
  // 슬로우모션
   bool  m_slowActive    = false;

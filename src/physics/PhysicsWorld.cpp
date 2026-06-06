@@ -145,6 +145,7 @@ void PhysicsWorld::ResolveCirclePair(Body& a, Body& b) {
   if (playerObstaclePair) {
     Body& player = a.kind == BodyKind::Player ? a : b;
     Body& obs = a.kind == BodyKind::Obstacle ? a : b;
+    if (player.ignoreObstacleContact) return;
 
     Vec2 delta = player.pos - obs.pos;
     const float minDist = player.circle.radius + obs.circle.radius;

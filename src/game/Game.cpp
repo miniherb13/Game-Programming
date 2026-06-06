@@ -4,6 +4,8 @@
 #include "math/Vec2.h"
 #include "render/VfxLibrary.h"
 
+#include "stb_image.h"
+
 #include <SDL.h>
 #include <algorithm>
 #include <cmath>
@@ -67,6 +69,27 @@ ItemSpriteId ItemSpriteFor(ItemType type) {
   case ItemType::Shield: return ItemSpriteId::Shield;
   }
   return ItemSpriteId::Health;
+}
+
+std::vector<std::string> TitleBackgroundPaths() {
+  const char* kFiles[] = {
+      "assets/title/title_screen_v2.png",
+      "assets/title/title_screen.png",
+  };
+
+  std::vector<std::string> paths;
+  for (const char* file : kFiles) {
+    paths.emplace_back(file);
+
+    if (char* base = SDL_GetBasePath()) {
+      paths.emplace_back(std::string(base) + file);
+      SDL_free(base);
+    }
+
+    paths.emplace_back(std::string("../") + file);
+    paths.emplace_back(std::string("../../") + file);
+  }
+  return paths;
 }
 
 ObstacleSpriteId ObstacleSpriteFor(ObstacleType type) {
@@ -388,6 +411,10 @@ Game::Game(int width, int height)
 }
 
 Game::~Game() {
+  if (m_titleTexture) {
+    SDL_DestroyTexture(static_cast<SDL_Texture*>(m_titleTexture));
+    m_titleTexture = nullptr;
+  }
   m_ui.Shutdown();
   VfxLibrary::Instance().Shutdown();
 }
@@ -1101,6 +1128,8 @@ void Game::ClampPlayerToGround() {
 }
 
 void Game::PreventPlayerObstacleClimb() {
+  if (m_shieldTimer > 0.0f) return;
+
   auto& p = m_world.Get(m_playerId);
   const float floorY = static_cast<float>(m_h - 40) - p.circle.radius;
   for (const auto& obs : m_obstacles) {
@@ -1248,8 +1277,9 @@ void Game::UpdateClearCelebration(float dt) {
 
 void Game::ReturnToTitle() {
   Restart();
-  m_started = false;
-  m_cleared = false;
+  m_started       = false;
+  m_showControls  = false;
+  m_cleared       = false;
 }
 
 void Game::DrawClearOverlay(SDL_Renderer* r) const {
@@ -1704,7 +1734,7 @@ void Game::DrawRewindVortex(SDL_Renderer* r, float camX) const {
     m_ui.DrawCentered(r, nx, ny, kClockNums[i], SDL_Color{255, 215, 105, numA});
   }
 
-  vfx.DrawVignette(r, m_w, m_h, static_cast<Uint8>(fade * 75.0f), 0, 0, 0);
+  vfx.DrawVignette(r, m_w, m_h, static_cast<Uint8>(fade * 75.0f), 6, 10, 30);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
@@ -1721,14 +1751,6 @@ void Game::DrawRewindScreenFx(SDL_Renderer* r) const {
   SDL_Rect full{0, 0, m_w, m_h};
   SDL_RenderFillRect(r, &full);
 
-  const Uint8 chromaA = static_cast<Uint8>(fade * 48.0f);
-  SDL_SetRenderDrawColor(r, 180, 80, 255, chromaA);
-  SDL_Rect leftHalf{0, 0, m_w / 2, m_h};
-  SDL_RenderFillRect(r, &leftHalf);
-  SDL_SetRenderDrawColor(r, 60, 200, 255, chromaA);
-  SDL_Rect rightHalf{m_w / 2, 0, m_w - m_w / 2, m_h};
-  SDL_RenderFillRect(r, &rightHalf);
-
   VfxLibrary::Instance().DrawVignette(r, m_w, m_h, static_cast<Uint8>(fade * 110.0f), 6, 10, 30);
 
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
@@ -1744,9 +1766,18 @@ void Game::HandleInput(float dt, Input& input) {
   if (!m_started) {
     if (in.resumePressed) {
       m_started          = true;
-      m_startGraceLeft   = kStartGraceSeconds;
+      m_showControls     = true;
       m_nextSpawnX       = SpawnHorizonX();
       m_nextItemX        = m_nextSpawnX;
+    }
+    m_lastInput = in;
+    return;
+  }
+
+  if (m_showControls) {
+    if (in.resumePressed) {
+      m_showControls     = false;
+      m_startGraceLeft   = kStartGraceSeconds;
       m_stageNotifyNum   = 1;
       m_stageNotifyTimer = kStageNotifyDuration;
     }
@@ -1796,7 +1827,7 @@ void Game::HandleInput(float dt, Input& input) {
 }
 
 void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
-  if (!m_started || m_paused) return;
+  if (!m_started || m_paused || m_showControls) return;
 
   if (m_gameOver) {
     if (input.resumePressed) Restart();
@@ -1898,6 +1929,8 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
 
   auto& p = m_world.Get(m_playerId);
   if (input.debugPressed) m_fields.ToggleDebug();
+  p.ignoreObstacleContact = m_shieldTimer > 0.0f;
+  if (m_shieldTimer > 0.0f) m_shieldOrbitPhase += simDt * 5.0f;
 
   if (!rewindFrame && m_jumpBuffer > 0.0f && (p.onGround || m_coyote > 0.0f)) {
     p.vel.y = -520.0f;
@@ -2046,7 +2079,82 @@ void Game::DrawGameplayHud(SDL_Renderer* r) const {
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
-void Game::DrawTitleOverlay(SDL_Renderer* r) const {
+void Game::EnsureTitleBackground(SDL_Renderer* renderer) const {
+  if (m_titleLoadAttempted || !renderer) return;
+  m_titleLoadAttempted = true;
+
+  for (const std::string& path : TitleBackgroundPaths()) {
+    int comp = 0;
+    int w = 0;
+    int h = 0;
+    unsigned char* pixels = stbi_load(path.c_str(), &w, &h, &comp, 4);
+    if (!pixels) continue;
+
+    std::vector<unsigned char> rgba(pixels, pixels + static_cast<std::size_t>(w * h * 4));
+    stbi_image_free(pixels);
+
+    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormatFrom(rgba.data(),
+                                                            w,
+                                                            h,
+                                                            32,
+                                                            w * 4,
+                                                            SDL_PIXELFORMAT_RGBA32);
+    if (!surface) continue;
+
+    SDL_Texture* tex = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_FreeSurface(surface);
+    if (!tex) continue;
+
+    m_titleW = w;
+    m_titleH = h;
+
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+    m_titleTexture = tex;
+    Log(LogLevel::Info, "Title background loaded: " + path);
+    return;
+  }
+
+  Log(LogLevel::Warn, "assets/title/title_screen.png missing");
+}
+
+void Game::DrawTitleBackground(SDL_Renderer* r) const {
+  EnsureTitleBackground(r);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+
+  constexpr Uint8 kBgR = 8;
+  constexpr Uint8 kBgG = 10;
+  constexpr Uint8 kBgB = 18;
+  SDL_SetRenderDrawColor(r, kBgR, kBgG, kBgB, 255);
+  const SDL_Rect bg{0, 0, m_w, m_h};
+  SDL_RenderFillRect(r, &bg);
+
+  if (!m_titleTexture || m_titleW <= 0 || m_titleH <= 0) return;
+
+  int srcW = m_titleW;
+  int srcH = m_titleH;
+  // Legacy jpeg export may include a bottom-right watermark.
+  if (m_titleW <= 1100 && m_titleH <= 600) {
+    srcW = std::max(1, static_cast<int>(static_cast<float>(m_titleW) * 0.81f));
+    srcH = std::max(1, static_cast<int>(static_cast<float>(m_titleH) * 0.88f));
+  }
+
+  const float scale =
+      std::min(static_cast<float>(m_w) / static_cast<float>(srcW),
+               static_cast<float>(m_h) / static_cast<float>(srcH));
+  const int dstW = std::max(1, static_cast<int>(static_cast<float>(srcW) * scale));
+  const int dstH = std::max(1, static_cast<int>(static_cast<float>(srcH) * scale));
+  const SDL_Rect src{0, 0, srcW, srcH};
+  const SDL_Rect dst{(m_w - dstW) / 2, (m_h - dstH) / 2, dstW, dstH};
+  SDL_RenderCopy(r, static_cast<SDL_Texture*>(m_titleTexture), &src, &dst);
+}
+
+void Game::DrawTitleSplashPrompt(SDL_Renderer* r) const {
+  const SDL_Color prompt{120, 220, 255, 255};
+  const int line = m_ui.LineHeight();
+  m_ui.DrawCenteredBlink(r, m_w / 2, m_h - line - 36, "SPACE를 눌러 시작", prompt, m_uiBlinkPhase);
+}
+
+void Game::DrawControlsOverlay(SDL_Renderer* r) const {
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(r, 0, 0, 0, 140);
   SDL_Rect dim{0, 0, m_w, m_h};
@@ -2068,9 +2176,9 @@ void Game::DrawTitleOverlay(SDL_Renderer* r) const {
   const char* lines[] = {
       "C : 점프",
       "X 홀드 / 떼기 : 폭탄",
-      "마우스 : 폭탄 조준",
-      "F : 슬로우모션 ON/OFF (슬로우 스태미나 소모)",
-      "Z : 시간 역행 (3초, 역행 스태미나 1.5)",
+      "마우스 : 폭탄 조준 (점선 궤도)",
+      "F : 슬로우모션 ON/OFF (파랑 스태미나 소모)",
+      "Z : 시간 역행 (3초, 보라 스태미나 1.5)",
       "번개 = 스태미나 · 하트 = 체력 · 별 = 무적",
       "Esc : 일시정지",
   };
@@ -2101,8 +2209,37 @@ void Game::DrawTitleOverlay(SDL_Renderer* r) const {
     m_ui.Draw(r, panel.x + kTextInsetX, lineY, lines[i], body);
   }
 
-  m_ui.DrawCenteredBlink(r, m_w / 2, panel.y + panel.h + 24,
-                         "SPACE를 눌러 시작하세요", white, m_uiBlinkPhase);
+  m_ui.DrawCenteredBlink(r, m_w / 2, panel.y + panel.h + 24, "SPACE를 눌러 시작하세요", white, m_uiBlinkPhase);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+void Game::DrawShieldAura(SDL_Renderer* r, float screenX, float screenY, float playerRadius) const {
+  if (m_shieldTimer <= 0.0f) return;
+
+  const float rx = playerRadius + 11.0f;
+  const float ry = playerRadius + 6.0f;
+  constexpr int kCount = 20;
+  auto& vfx = VfxLibrary::Instance();
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_ADD);
+  for (int i = 0; i < kCount; i++) {
+    const float t = m_shieldOrbitPhase + (6.2831853f * static_cast<float>(i)) / static_cast<float>(kCount);
+    const float px = screenX + std::cos(t) * rx;
+    const float py = screenY + std::sin(t) * ry;
+    const float pulse = 0.55f + 0.45f * std::sin(t * 3.0f + m_shieldOrbitPhase * 2.5f);
+    const Uint8 a = static_cast<Uint8>(110.0f + pulse * 120.0f);
+    const float sz = 1.8f + pulse * 2.2f;
+
+    if (vfx.IsReady()) {
+      vfx.DrawSpark(r, px, py, sz, 255, 220, 60, a);
+      vfx.DrawSoftGlow(r, px, py, sz * 2.4f, 255, 210, 40, static_cast<Uint8>(a * 0.45f));
+    } else {
+      SDL_SetRenderDrawColor(r, 255, 220, 60, a);
+      const int half = std::max(1, static_cast<int>(sz));
+      SDL_Rect dot{static_cast<int>(px) - half, static_cast<int>(py) - half, half * 2, half * 2};
+      SDL_RenderFillRect(r, &dot);
+    }
+  }
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
@@ -2161,9 +2298,16 @@ void Game::DrawGameOverOverlay(SDL_Renderer* r) const {
 }
 
 void Game::Render(SDL_Renderer* r) const {
+  if (!m_started) {
+    DrawTitleBackground(r);
+    DrawTitleSplashPrompt(r);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    return;
+  }
+
   const float camX    = CameraX();
   const float groundY = static_cast<float>(m_h - 40);
-  const bool gameplayHud = m_started && !m_paused;
+  const bool gameplayHud = m_started && !m_paused && !m_showControls;
 
   m_stage.EnsureUploaded(r);
   if (m_glacier.IsLoaded()) m_glacier.EnsureUploaded(r);
@@ -2192,9 +2336,7 @@ void Game::Render(SDL_Renderer* r) const {
     const float screenX   = p.pos.x - camX;
     const bool rewindPose = m_rewindPoseLeft > 0.0f;
     const bool airPose    = !p.onGround || m_jumpGroundGrace > 0.0f || m_jumpBuffer > 0.0f;
-    const float footY     = rewindPose
-        ? static_cast<float>(m_h) * 0.5f + kPlayerDisplayHeight * 0.5f
-        : p.pos.y + p.circle.radius;
+    const float footY     = p.pos.y + p.circle.radius;
     const bool blink = m_blinkTimer > 0.0f && (static_cast<int>(m_blinkTimer * 10.0f) % 2 == 0);
     if (!blink) {
       m_playerSprite.EnsureUploaded(r);
@@ -2321,12 +2463,10 @@ void Game::Render(SDL_Renderer* r) const {
     }
   }
 
-  // 무적 테두리
+  // 실드 오라
   if (m_shieldTimer > 0.0f) {
     const auto& p = m_world.Get(m_playerId);
-    SDL_SetRenderDrawColor(r, 255, 220, 60, 200);
-    SDL_Rect shieldRc = RectFromCircle({p.pos.x - camX, p.pos.y}, p.circle.radius + 6.0f);
-    SDL_RenderDrawRect(r, &shieldRc);
+    DrawShieldAura(r, p.pos.x - camX, p.pos.y, p.circle.radius);
   }
 
   // 파티클
@@ -2389,10 +2529,10 @@ void Game::Render(SDL_Renderer* r) const {
     DrawGameplayHud(r);
   }
 
-  if (!m_started)       DrawTitleOverlay(r);
-  else if (m_cleared)   DrawClearOverlay(r);
+  if (m_cleared)        DrawClearOverlay(r);
   else if (m_gameOver)  DrawGameOverOverlay(r);
   else if (m_paused)    DrawPauseOverlay(r);
+  else if (m_showControls) DrawControlsOverlay(r);
 }
 
 } // namespace cr
