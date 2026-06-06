@@ -1,6 +1,7 @@
 #include "game/StageGlacier.h"
 
 #include "core/Log.h"
+#include "render/SpriteOutline.h"
 
 #include "stb_image.h"
 
@@ -217,6 +218,8 @@ bool StageGlacier::Load() {
   }
   if (!LoadSheetFile("glacier_pickups.png", m_pickups, kPickupCols, kPickupRows, true)) {
     Log(LogLevel::Warn, "glacier_pickups.png not found");
+  } else {
+    AddBoldWhiteOutline(m_pickups.rgba, m_pickups.w, m_pickups.h);
   }
 
   m_loaded = true;

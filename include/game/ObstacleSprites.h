@@ -17,18 +17,46 @@ enum class ObstacleSpriteId {
   Falling,
 };
 
-// assets/stages/mars/obstacles/*.png — Stage 1 (Mars) gameplay hazards
+enum class ObstacleStage {
+  Mars,
+  Glacier,
+  Emerald,
+};
+
+// assets/stages/{mars|glacier|emerald}/obstacles/*.png
 class ObstacleSprites {
 public:
   ~ObstacleSprites();
 
   bool Load();
-  void EnsureUploaded(SDL_Renderer* renderer) const;
-  bool IsReady() const { return m_gpuReady; }
+  void EnsureUploaded(SDL_Renderer* renderer, ObstacleStage stage) const;
+  bool IsReady(ObstacleStage stage) const;
 
-  void DrawGrounded(SDL_Renderer* renderer, ObstacleSpriteId id, float screenX, float footY, float displayHeight) const;
-  void DrawFromTop(SDL_Renderer* renderer, ObstacleSpriteId id, float screenX, float topY, float displayHeight) const;
-  void DrawCentered(SDL_Renderer* renderer, ObstacleSpriteId id, float screenX, float screenY, float displaySize) const;
+  void DrawGrounded(SDL_Renderer* renderer,
+                    ObstacleStage stage,
+                    ObstacleSpriteId id,
+                    float screenX,
+                    float footY,
+                    float displayHeight) const;
+  void DrawFromTop(SDL_Renderer* renderer,
+                   ObstacleStage stage,
+                   ObstacleSpriteId id,
+                   float screenX,
+                   float topY,
+                   float displayHeight) const;
+  void DrawCentered(SDL_Renderer* renderer,
+                    ObstacleStage stage,
+                    ObstacleSpriteId id,
+                    float screenX,
+                    float screenY,
+                    float displaySize) const;
+  void DrawCenteredRotated(SDL_Renderer* renderer,
+                           ObstacleStage stage,
+                           ObstacleSpriteId id,
+                           float screenX,
+                           float screenY,
+                           float displaySize,
+                           float rotationDeg) const;
 
 private:
   struct CropRect {
@@ -55,12 +83,32 @@ private:
     bool loaded = false;
   };
 
-  bool LoadFile(const char* filename,
+  struct SpriteBank {
+    SpriteEntry normal{"normal.png"};
+    SpriteEntry tall{"tall.png"};
+    SpriteEntry bounce{"bounce.png"};
+    SpriteEntry spike{"spike.png"};
+    SpriteEntry triangle{"triangle.png"};
+    SpriteEntry ceiling{"ceiling.png"};
+    SpriteEntry moving{"moving.png"};
+    SpriteEntry falling{"falling.png"};
+    mutable bool gpuReady = false;
+    mutable bool uploadAttempted = false;
+
+    SpriteEntry* Entry(ObstacleSpriteId id);
+    const SpriteEntry* Entry(ObstacleSpriteId id) const;
+    void DestroyTextures();
+  };
+
+  bool LoadFile(const char* folder,
+                const char* filename,
                 std::vector<unsigned char>& rgba,
                 int& w,
                 int& h,
                 CropRect& outBounds) const;
+  bool LoadBank(SpriteBank& bank, const char* folder) const;
   bool UploadRgba(SDL_Renderer* renderer, const unsigned char* rgba, int w, int h, SpriteTex& out) const;
+  void EnsureBankUploaded(SDL_Renderer* renderer, SpriteBank& bank, ObstacleStage stage) const;
   static void BlitScaled(SDL_Renderer* renderer,
                          const SpriteTex& sprite,
                          float screenX,
@@ -72,20 +120,19 @@ private:
                                  float screenX,
                                  float screenY,
                                  float displaySize);
+  static void BlitScaledCenteredRotated(SDL_Renderer* renderer,
+                                        const SpriteTex& sprite,
+                                        float screenX,
+                                        float screenY,
+                                        float displaySize,
+                                        float rotationDeg);
 
-  const SpriteTex* TexFor(ObstacleSpriteId id) const;
-  SpriteTex* TexFor(ObstacleSpriteId id);
+  SpriteBank* Bank(ObstacleStage stage);
+  const SpriteBank* Bank(ObstacleStage stage) const;
 
-  mutable SpriteEntry m_normal{"normal.png"};
-  mutable SpriteEntry m_tall{"tall.png"};
-  mutable SpriteEntry m_bounce{"bounce.png"};
-  mutable SpriteEntry m_spike{"spike.png"};
-  mutable SpriteEntry m_triangle{"triangle.png"};
-  mutable SpriteEntry m_ceiling{"ceiling.png"};
-  mutable SpriteEntry m_moving{"moving.png"};
-  mutable SpriteEntry m_falling{"falling.png"};
-  mutable bool m_gpuReady = false;
-  mutable bool m_uploadAttempted = false;
+  mutable SpriteBank m_mars{};
+  mutable SpriteBank m_glacier{};
+  mutable SpriteBank m_emerald{};
 };
 
 } // namespace cr

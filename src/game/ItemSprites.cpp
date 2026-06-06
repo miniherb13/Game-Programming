@@ -1,6 +1,7 @@
 #include "game/ItemSprites.h"
 
 #include "core/Log.h"
+#include "render/SpriteOutline.h"
 
 #include "stb_image.h"
 
@@ -179,6 +180,8 @@ bool ItemSprites::LoadIconFile(const char* filename,
     rgba.assign(pixels, pixels + static_cast<std::size_t>(w * h * 4));
     stbi_image_free(pixels);
     RemoveBackground(rgba, w, h);
+    AddExtraBoldWhiteOutline(rgba, w, h);
+    AddWhiteOutlineRing(rgba, w, h, 3);
     const PixelBounds bounds = ComputeContentBounds(rgba, w, h);
     outBounds.x = bounds.x;
     outBounds.y = bounds.y;

@@ -7,6 +7,7 @@
 #include "game/ObstacleSprites.h"
 #include "game/PlayerSprite.h"
 #include "game/StageGlacier.h"
+#include "game/StageEmerald.h"
 #include "game/StageMap.h"
 #include "physics/PhysicsWorld.h"
 #include "render/UiText.h"
@@ -88,7 +89,9 @@ class Game {
 public:
   static constexpr float kStageLengthM = 5000.0f;
   static constexpr float kGlacierStageStartM = 5000.0f;
-  static constexpr float kTotalMapLengthM = kGlacierStageStartM + kStageLengthM;
+  static constexpr float kEmeraldStageStartM = 10000.0f;
+  static constexpr float kTotalMapLengthM = kEmeraldStageStartM + kStageLengthM;
+  static constexpr float kHpSurvivalDistanceM = kTotalMapLengthM * 1.5f;
   static constexpr float kStageTransitionSeconds = 0.9f;
 
   Game(int width, int height);
@@ -110,7 +113,8 @@ private:
   void UpdateSpawn();
   void SpawnPattern(float x, int pattern);
   void SpawnFallingObstacle();
-  void UpdateFallingObstacles();
+  void UpdateFallingObstacles(float dt);
+  void SpawnMeteorTrailParticle(Vec2 meteorPos, Vec2 meteorVel, ObstacleStage stage);
   void UpdateObstacles(float dt);
   void SpawnItem(float x, ItemType type);
   void UpdateItems(float dt);
@@ -150,7 +154,10 @@ private:
   void DrawRewindVortex(SDL_Renderer* r, float camX) const;
   void DrawRewindScreenFx(SDL_Renderer* r) const;
   void UpdateStageTransition(float dt);
-  void DrawStageBackground(SDL_Renderer* r, float camX, float groundY, bool useGlacier) const;
+  enum class VisualStage { Mars = 1, Glacier = 2, Emerald = 3 };
+  VisualStage ResolveVisualStage() const;
+  ObstacleStage ResolveObstacleStage() const;
+  void DrawStageBackground(SDL_Renderer* r, float camX, float groundY, VisualStage stage) const;
   void DrawStageTransitionFade(SDL_Renderer* r) const;
   void EnterClearState();
   void UpdateClearCelebration(float dt);
@@ -177,6 +184,7 @@ private:
   ObstacleSprites m_obstacleSprites;
   StageMap m_stage;
   StageGlacier m_glacier;
+  StageEmerald m_emerald;
   std::vector<int>       m_propIds;
   std::vector<int>       m_fallingIds;
   std::vector<Item>      m_items;
@@ -236,18 +244,22 @@ private:
   // 떨어지는 장애물
   float m_fallingSpawnTimer    = 0.0f;
   float m_fallingSpawnInterval = 8.0f;
+  float m_meteorTrailAcc       = 0.0f;
 
   // 스테이지 알림
   float m_stageNotifyTimer = 0.0f;
   int   m_stageNotifyNum   = 0;
   bool  m_stage2Notified   = false;
+  bool  m_stage3Notified   = false;
 
-  // Mars → Glacier 전환
+  // Mars → Glacier → Emerald 전환
   bool  m_glacierTransitionDone  = false;
+  bool  m_emeraldTransitionDone  = false;
+  int   m_transitionTargetStage  = 2;
   bool  m_stageTransitionPlaying = false;
   float m_stageTransitionT       = 0.0f;
 
-  // 2스테이지(10km) 클리어 연출
+  // 3스테이지(15km) 클리어 연출
   bool  m_cleared           = false;
   float m_fireworkCooldown  = 0.0f;
   float m_clearPulse        = 0.0f;

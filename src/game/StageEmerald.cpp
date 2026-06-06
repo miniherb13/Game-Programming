@@ -1,4 +1,4 @@
-#include "game/StageMap.h"
+#include "game/StageEmerald.h"
 
 #include "core/Log.h"
 #include "render/SpriteOutline.h"
@@ -20,9 +20,9 @@ namespace {
 constexpr int kTileSheetCols = 8;
 constexpr int kTileSheetRows = 4;
 
-// mars_tiles.png 8x4 (row 0 = ground, row 1 = platforms)
-constexpr int kTileGroundTop = 2;
-constexpr int kTileGroundFill = 4;
+// emerald_tiles.png 8x4 (row 0 = ground, row 1 = platforms)
+constexpr int kTileGroundTop = 1;
+constexpr int kTileGroundFill = 3;
 constexpr int kTilePlatformSmall = 0;
 constexpr int kTilePlatformWideL = 1;
 constexpr int kTilePlatformWideC = 0;
@@ -44,15 +44,15 @@ constexpr int kDecorDisplayPx = 26;
 
 std::vector<std::string> CandidatePaths(const char* relative) {
   std::vector<std::string> paths;
-  paths.emplace_back(std::string("assets/stages/mars/") + relative);
+  paths.emplace_back(std::string("assets/stages/emerald/") + relative);
 
   if (char* base = SDL_GetBasePath()) {
-    paths.emplace_back(std::string(base) + "assets/stages/mars/" + relative);
+    paths.emplace_back(std::string(base) + "assets/stages/emerald/" + relative);
     SDL_free(base);
   }
 
-  paths.emplace_back(std::string("../assets/stages/mars/") + relative);
-  paths.emplace_back(std::string("../../assets/stages/mars/") + relative);
+  paths.emplace_back(std::string("../assets/stages/emerald/") + relative);
+  paths.emplace_back(std::string("../../assets/stages/emerald/") + relative);
   return paths;
 }
 
@@ -129,7 +129,7 @@ bool LoadRgbaFile(const char* filename, std::vector<unsigned char>& rgba, int& w
     rgba.assign(img, img + static_cast<std::size_t>(w * h * 4));
     stbi_image_free(img);
     Log(LogLevel::Info,
-        "Stage asset loaded: " + path + " (" + std::to_string(w) + "x" + std::to_string(h) + ")");
+        "emerald stage asset loaded: " + path + " (" + std::to_string(w) + "x" + std::to_string(h) + ")");
     return true;
   }
   return false;
@@ -161,7 +161,7 @@ void DestroyTexture(void*& tex) {
 
 } // namespace
 
-StageMap::~StageMap() {
+StageEmerald::~StageEmerald() {
   DestroyTexture(m_tiles.texture);
   DestroyTexture(m_decor.texture);
   DestroyTexture(m_hazards.texture);
@@ -171,7 +171,7 @@ StageMap::~StageMap() {
   DestroyTexture(m_parallaxNear.texture);
 }
 
-bool StageMap::LoadSheetFile(const char* filename, SheetAsset& out, int cols, int rows, bool stripBackground) {
+bool StageEmerald::LoadSheetFile(const char* filename, SheetAsset& out, int cols, int rows, bool stripBackground) {
   if (!LoadRgbaFile(filename, out.rgba, out.w, out.h)) return false;
   if (stripBackground) RemoveEdgeBackground(out.rgba, out.w, out.h);
   out.cols = cols;
@@ -181,43 +181,43 @@ bool StageMap::LoadSheetFile(const char* filename, SheetAsset& out, int cols, in
   return true;
 }
 
-bool StageMap::LoadParallaxFile(const char* filename, ParallaxAsset& out, bool stripBackground) {
+bool StageEmerald::LoadParallaxFile(const char* filename, ParallaxAsset& out, bool stripBackground) {
   if (!LoadRgbaFile(filename, out.rgba, out.w, out.h)) return false;
   if (stripBackground) RemoveEdgeBackground(out.rgba, out.w, out.h);
   return true;
 }
 
-bool StageMap::LoadMars() {
+bool StageEmerald::Load() {
   m_cols = kTileSheetCols;
   m_rows = kTileSheetRows;
   m_displayTilePx = kDisplayTilePx;
 
-  if (!LoadSheetFile("mars_tiles.png", m_tiles, kTileSheetCols, kTileSheetRows, true)) {
-    Log(LogLevel::Error, "Failed to load assets/stages/mars/mars_tiles.png");
+  if (!LoadSheetFile("emerald_tiles.png", m_tiles, kTileSheetCols, kTileSheetRows, true)) {
+    Log(LogLevel::Error, "Failed to load assets/stages/emerald/emerald_tiles.png");
     return false;
   }
 
   m_tileW = m_tiles.cellW;
   m_tileH = m_tiles.cellH;
 
-  if (!LoadParallaxFile("mars_parallax_far.png", m_parallaxFar, false)) {
-    Log(LogLevel::Warn, "mars_parallax_far.png not found");
+  if (!LoadParallaxFile("emerald_parallax_far.png", m_parallaxFar, false)) {
+    Log(LogLevel::Warn, "emerald_parallax_far.png not found");
   }
-  if (!LoadParallaxFile("mars_parallax_mid.png", m_parallaxMid, true)) {
-    Log(LogLevel::Warn, "mars_parallax_mid.png not found");
+  if (!LoadParallaxFile("emerald_parallax_mid.png", m_parallaxMid, true)) {
+    Log(LogLevel::Warn, "emerald_parallax_mid.png not found");
   }
-  if (!LoadParallaxFile("mars_parallax_near.png", m_parallaxNear, true)) {
-    Log(LogLevel::Warn, "mars_parallax_near.png not found");
+  if (!LoadParallaxFile("emerald_parallax_near.png", m_parallaxNear, true)) {
+    Log(LogLevel::Warn, "emerald_parallax_near.png not found");
   }
 
-  if (!LoadSheetFile("mars_decor.png", m_decor, kDecorCols, kDecorRows, true)) {
-    Log(LogLevel::Warn, "mars_decor.png not found");
+  if (!LoadSheetFile("emerald_decor.png", m_decor, kDecorCols, kDecorRows, true)) {
+    Log(LogLevel::Warn, "emerald_decor.png not found");
   }
-  if (!LoadSheetFile("mars_hazards.png", m_hazards, kHazardCols, kHazardRows, true)) {
-    Log(LogLevel::Warn, "mars_hazards.png not found");
+  if (!LoadSheetFile("emerald_hazards.png", m_hazards, kHazardCols, kHazardRows, true)) {
+    Log(LogLevel::Warn, "emerald_hazards.png not found");
   }
-  if (!LoadSheetFile("mars_pickups.png", m_pickups, kPickupCols, kPickupRows, true)) {
-    Log(LogLevel::Warn, "mars_pickups.png not found");
+  if (!LoadSheetFile("emerald_pickups.png", m_pickups, kPickupCols, kPickupRows, true)) {
+    Log(LogLevel::Warn, "emerald_pickups.png not found");
   } else {
     AddBoldWhiteOutline(m_pickups.rgba, m_pickups.w, m_pickups.h);
   }
@@ -226,21 +226,21 @@ bool StageMap::LoadMars() {
   return true;
 }
 
-void StageMap::UploadSheet(SDL_Renderer* renderer, SheetAsset& sheet) const {
+void StageEmerald::UploadSheet(SDL_Renderer* renderer, SheetAsset& sheet) const {
   if (sheet.texture || sheet.rgba.empty()) return;
   std::vector<unsigned char> scratch = sheet.rgba;
   sheet.texture = CreateTexture(renderer, scratch, sheet.w, sheet.h);
   sheet.rgba.clear();
 }
 
-void StageMap::UploadParallax(SDL_Renderer* renderer, ParallaxAsset& layer) const {
+void StageEmerald::UploadParallax(SDL_Renderer* renderer, ParallaxAsset& layer) const {
   if (layer.texture || layer.rgba.empty()) return;
   std::vector<unsigned char> scratch = layer.rgba;
   layer.texture = CreateTexture(renderer, scratch, layer.w, layer.h);
   layer.rgba.clear();
 }
 
-void StageMap::EnsureUploaded(SDL_Renderer* renderer) const {
+void StageEmerald::EnsureUploaded(SDL_Renderer* renderer) const {
   if (!m_loaded || m_uploaded || !renderer) return;
 
   UploadSheet(renderer, m_tiles);
@@ -254,7 +254,7 @@ void StageMap::EnsureUploaded(SDL_Renderer* renderer) const {
   m_uploaded = m_tiles.texture != nullptr;
 }
 
-void StageMap::DrawScrollingLayer(SDL_Renderer* renderer,
+void StageEmerald::DrawScrollingLayer(SDL_Renderer* renderer,
                                   const ParallaxAsset& layer,
                                   float cameraX,
                                   float scrollFactor,
@@ -278,7 +278,7 @@ void StageMap::DrawScrollingLayer(SDL_Renderer* renderer,
   }
 }
 
-void StageMap::DrawParallaxBackground(SDL_Renderer* renderer,
+void StageEmerald::DrawParallaxBackground(SDL_Renderer* renderer,
                                       int screenW,
                                       int screenH,
                                       float cameraX,
@@ -290,7 +290,7 @@ void StageMap::DrawParallaxBackground(SDL_Renderer* renderer,
   DrawScrollingLayer(renderer, m_parallaxMid, cameraX, 0.22f, screenW, midY, midH);
 }
 
-void StageMap::DrawParallaxNear(SDL_Renderer* renderer,
+void StageEmerald::DrawParallaxNear(SDL_Renderer* renderer,
                                 int screenW,
                                 int screenH,
                                 float cameraX,
@@ -301,7 +301,7 @@ void StageMap::DrawParallaxNear(SDL_Renderer* renderer,
   DrawScrollingLayer(renderer, m_parallaxNear, cameraX, 0.42f, screenW, nearY, nearH);
 }
 
-void StageMap::DrawTile(SDL_Renderer* renderer, int col, int row, int dstX, int dstY, int dstW, int dstH) const {
+void StageEmerald::DrawTile(SDL_Renderer* renderer, int col, int row, int dstX, int dstY, int dstW, int dstH) const {
   if (!m_tiles.texture || col < 0 || col >= m_cols || row < 0 || row >= m_rows) return;
 
   SDL_Rect src{col * m_tileW, row * m_tileH, m_tileW, m_tileH};
@@ -309,7 +309,7 @@ void StageMap::DrawTile(SDL_Renderer* renderer, int col, int row, int dstX, int 
   SDL_RenderCopy(renderer, static_cast<SDL_Texture*>(m_tiles.texture), &src, &dst);
 }
 
-void StageMap::DrawSheetCell(SDL_Renderer* renderer,
+void StageEmerald::DrawSheetCell(SDL_Renderer* renderer,
                              const SheetAsset& sheet,
                              int col,
                              int row,
@@ -324,7 +324,7 @@ void StageMap::DrawSheetCell(SDL_Renderer* renderer,
   SDL_RenderCopy(renderer, static_cast<SDL_Texture*>(sheet.texture), &src, &dst);
 }
 
-void StageMap::DrawTerrain(SDL_Renderer* renderer, int screenW, int screenH, float cameraX, float groundY) const {
+void StageEmerald::DrawTerrain(SDL_Renderer* renderer, int screenW, int screenH, float cameraX, float groundY) const {
   if (!m_tiles.texture) return;
 
   const int px = m_displayTilePx;
@@ -364,7 +364,7 @@ void StageMap::DrawTerrain(SDL_Renderer* renderer, int screenW, int screenH, flo
   const int platY = topY - px - 40;
 
   for (const PlatformSpec& p : platforms) {
-    const int baseX = static_cast<int>(p.worldX - cameraX);
+    const int baseX = static_cast<int>(p.worldX + kWorldOffsetX - cameraX);
     if (baseX < -px * 5 || baseX > screenW + px * 5) continue;
 
     if (!p.useWide || p.tilesWide <= 1) {
@@ -380,7 +380,7 @@ void StageMap::DrawTerrain(SDL_Renderer* renderer, int screenW, int screenH, flo
   }
 }
 
-void StageMap::DrawStageObjects(SDL_Renderer* renderer, int screenW, int screenH, float cameraX, float groundY) const {
+void StageEmerald::DrawStageObjects(SDL_Renderer* renderer, int screenW, int screenH, float cameraX, float groundY) const {
   (void)screenH;
   const int px = m_displayTilePx;
   const int topY = static_cast<int>(groundY) - px;
@@ -398,7 +398,7 @@ void StageMap::DrawStageObjects(SDL_Renderer* renderer, int screenW, int screenH
   };
 
   for (const DecorPlacement& d : decors) {
-    const int x = static_cast<int>(d.worldX - cameraX);
+    const int x = static_cast<int>(d.worldX + kWorldOffsetX - cameraX);
     if (x < -kDecorDisplayPx * 2 || x > screenW + kDecorDisplayPx * 2) continue;
     const int y = topY - kDecorDisplayPx + 6;
     DrawSheetCell(renderer, m_decor, d.col, d.row, x, y, kDecorDisplayPx, kDecorDisplayPx);
@@ -418,7 +418,7 @@ void StageMap::DrawStageObjects(SDL_Renderer* renderer, int screenW, int screenH
   };
 
   for (const HazardPlacement& h : hazards) {
-    const int x = static_cast<int>(h.worldX - cameraX);
+    const int x = static_cast<int>(h.worldX + kWorldOffsetX - cameraX);
     if (x < -px * 2 || x > screenW + px * 2) continue;
     const int y = h.ceiling ? topY - px * 2 - 24 : topY - px;
     DrawSheetCell(renderer, m_hazards, h.col, h.row, x, y, px, px);
@@ -442,7 +442,7 @@ void StageMap::DrawStageObjects(SDL_Renderer* renderer, int screenW, int screenH
   };
 
   for (const PickupPlacement& p : pickups) {
-    const int x = static_cast<int>(p.worldX - cameraX);
+    const int x = static_cast<int>(p.worldX + kWorldOffsetX - cameraX);
     if (x < -kPickupDisplayPx * 2 || x > screenW + kPickupDisplayPx * 2) continue;
     const int y = topY + static_cast<int>(p.yOffset);
     DrawSheetCell(renderer, m_pickups, p.col, 0, x, y, kPickupDisplayPx, kPickupDisplayPx);

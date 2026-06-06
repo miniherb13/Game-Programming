@@ -156,7 +156,7 @@ void BombSystem::LoadSnapshots(const std::array<BombSlotSnapshot, 16>& in, Physi
 
 BombSystem::BombSystem(int maxBombs) : m_slots(static_cast<std::size_t>(maxBombs)) {}
 
-void BombSystem::SetExplosionHandler(std::function<void(Vec2 center)> handler) {
+void BombSystem::SetExplosionHandler(std::function<void(Vec2 center, int hitObstacleId)> handler) {
   m_onExplosion = std::move(handler);
 }
 
@@ -387,7 +387,7 @@ void BombSystem::ApplyExplosionImpulse(PhysicsWorld& world,
   for (int id : m_bodyIds) applyTo(id);
 }
 
-void BombSystem::Explode(int slotIndex, PhysicsWorld& world, int playerId) {
+void BombSystem::Explode(int slotIndex, PhysicsWorld& world, int playerId, int hitObstacleId) {
   auto& slot = m_slots[static_cast<std::size_t>(slotIndex)];
   auto& b = world.Get(slot.bodyId);
   if (!b.active) return;
@@ -402,7 +402,7 @@ void BombSystem::Explode(int slotIndex, PhysicsWorld& world, int playerId) {
                         BombTuning::explosionRadius,
                         BombTuning::explosionImpulse);
 
-  if (m_onExplosion) m_onExplosion(slot.explosionCenter);
+  if (m_onExplosion) m_onExplosion(slot.explosionCenter, hitObstacleId);
 
   b.active = false;
   b.vel = {};
@@ -428,6 +428,7 @@ void BombSystem::FixedUpdate(float dt, PhysicsWorld& world, int playerId,
     }
 
     bool hitObstacle = false;
+    int hitObstacleId = -1;
     for (int obstacleId : obstacleBodyIds) {
       const auto& obstacle = world.Get(obstacleId);
       if (!obstacle.active) continue;
@@ -435,10 +436,11 @@ void BombSystem::FixedUpdate(float dt, PhysicsWorld& world, int playerId,
       const float dy = b.pos.y - obstacle.pos.y;
       const float dist = std::sqrt(dx * dx + dy * dy);
       // Physics collision resolution may separate bodies before we get here,
-      // so allow a small contact margin to still count as a hit.
-      const float contact = b.circle.radius + obstacle.circle.radius + 8.0f;
+      // so allow a generous contact margin to still count as a hit.
+      const float contact = b.circle.radius + obstacle.circle.radius + 24.0f;
       if (dist <= contact) {
         hitObstacle = true;
+        hitObstacleId = obstacleId;
         break;
       }
     }
@@ -447,13 +449,13 @@ void BombSystem::FixedUpdate(float dt, PhysicsWorld& world, int playerId,
     slot.prevVelY = b.vel.y;
 
     if (hitObstacle) {
-      Explode(static_cast<int>(i), world, playerId);
+      Explode(static_cast<int>(i), world, playerId, hitObstacleId);
       continue;
     }
 
     slot.fuseLeft -= dt;
     if (slot.fuseLeft <= 0.0f) {
-      Explode(static_cast<int>(i), world, playerId);
+      Explode(static_cast<int>(i), world, playerId, -1);
     }
   }
 }
