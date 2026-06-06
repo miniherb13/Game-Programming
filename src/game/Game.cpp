@@ -1021,21 +1021,45 @@ void Game::UpdateItems(float dt) {
 
 void Game::UpdateSpawn() {
   const float camRight = SpawnHorizonX();
-  m_spawnGap = std::max(80.0f, 200.0f - m_elapsed * 0.5f);
 
-  // 난이도별 패턴 확장
-  // 0~300m   : 패턴 0 (낮은 상자)
-  // 300~600m : + 패턴 1 (높은 상자)
-  // 600~1000m: + 패턴 2,3 (연속/조합)
-  // 1000~1500m: + 패턴 4,5 (바운스/삼각형)
-  // 1500~2000m: + 패턴 6 (천장)
-  // 2000m~   : + 패턴 7 (움직이는 장애물)
+  // 스테이지별 난이도 설정
+  // 스테이지 1 (0~5000m): 쉬움
+  // 스테이지 2 (5000~10000m): 중간
+  // 스테이지 3 (10000~15000m): 어려움
+
   int maxPattern = 0;
-  if (m_distance > 300.0f)  maxPattern = 1;
-  if (m_distance > 600.0f)  maxPattern = 3;
-  if (m_distance > 1000.0f) maxPattern = 5;
-  if (m_distance > 1500.0f) maxPattern = 6;
-  if (m_distance > 2000.0f) maxPattern = 7;
+  float minGap   = 160.0f;
+  float baseGap  = 220.0f;
+
+  if (m_distance < kGlacierStageStartM) {
+    // 스테이지 1 — 쉬움
+    minGap  = 160.0f;
+    baseGap = 220.0f;
+    if (m_distance > 300.0f)  maxPattern = 1;
+    if (m_distance > 1000.0f) maxPattern = 2;
+    if (m_distance > 2000.0f) maxPattern = 3;
+    if (m_distance > 3000.0f) maxPattern = 4;
+
+  } else if (m_distance < kEmeraldStageStartM) {
+    // 스테이지 2 — 중간
+    minGap  = 120.0f;
+    baseGap = 180.0f;
+    maxPattern = 3;
+    if (m_distance > 6000.0f) maxPattern = 4;
+    if (m_distance > 7000.0f) maxPattern = 5;
+    if (m_distance > 8000.0f) maxPattern = 6;
+    if (m_distance > 9000.0f) maxPattern = 7;
+
+  } else {
+    // 스테이지 3 — 어려움
+    minGap  = 80.0f;
+    baseGap = 140.0f;
+    maxPattern = 5;
+    if (m_distance > 11000.0f) maxPattern = 6;
+    if (m_distance > 12000.0f) maxPattern = 7;
+  }
+
+  m_spawnGap = std::max(minGap, baseGap - m_elapsed * 0.3f);
 
   const float mapEndX = m_playerScreenX + kTotalMapLengthM;
   while (m_nextSpawnX < camRight && m_nextSpawnX < mapEndX) {
@@ -1928,10 +1952,20 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
 
   m_staminaRewind = std::min(1.5f, m_staminaRewind + dt * 0.15f);
 
-  if (m_distance > 300.0f) {
-    m_fallingSpawnInterval = std::max(3.0f, 8.0f - m_elapsed * 0.1f);
+  // 스테이지별 떨어지는 장애물 스폰 간격
+  float fallingInterval = 999.0f; // 기본값 (안 나옴)
+  if (m_distance > kGlacierStageStartM) {
+    // 스테이지 2부터 등장
+    fallingInterval = std::max(4.0f, 8.0f - m_elapsed * 0.05f);
+  }
+  if (m_distance > kEmeraldStageStartM) {
+    // 스테이지 3에서 더 자주
+    fallingInterval = std::max(2.0f, 5.0f - m_elapsed * 0.05f);
+  }
+
+  if (m_distance > kGlacierStageStartM) {
     m_fallingSpawnTimer += dt;
-    if (m_fallingSpawnTimer >= m_fallingSpawnInterval) {
+    if (m_fallingSpawnTimer >= fallingInterval) {
       m_fallingSpawnTimer = 0.0f;
       SpawnFallingObstacle();
     }
