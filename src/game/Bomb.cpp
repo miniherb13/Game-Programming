@@ -19,21 +19,6 @@ SDL_Rect RectFromCircleScreen(Vec2 screenPos, float r) {
   return out;
 }
 
-void DrawCircleFilled(SDL_Renderer* r, Vec2 screenCenter, float radius) {
-  const int cx = static_cast<int>(screenCenter.x);
-  const int cy = static_cast<int>(screenCenter.y);
-  const int ir = static_cast<int>(radius);
-  for (int y = -ir; y <= ir; y++) {
-    const float wy = static_cast<float>(y);
-    const float halfW = std::sqrt(std::max(0.0f, radius * radius - wy * wy));
-    SDL_RenderDrawLine(r,
-                       cx - static_cast<int>(halfW),
-                       cy + y,
-                       cx + static_cast<int>(halfW),
-                       cy + y);
-  }
-}
-
 void DrawCircleOutline(SDL_Renderer* r, Vec2 screenCenter, float radius) {
   constexpr int segments = 48;
   int px = static_cast<int>(screenCenter.x + radius);
@@ -46,6 +31,91 @@ void DrawCircleOutline(SDL_Renderer* r, Vec2 screenCenter, float radius) {
     px = nx;
     py = ny;
   }
+}
+
+void FillDisc(SDL_Renderer* r, int cx, int cy, int radius, Uint8 cr, Uint8 cg, Uint8 cb, Uint8 alpha) {
+  if (radius <= 0 || alpha == 0) return;
+  SDL_SetRenderDrawColor(r, cr, cg, cb, alpha);
+  for (int y = -radius; y <= radius; ++y) {
+    const int halfW = static_cast<int>(std::sqrt(static_cast<float>(std::max(0, radius * radius - y * y))));
+    SDL_RenderDrawLine(r, cx - halfW, cy + y, cx + halfW, cy + y);
+  }
+}
+
+void DrawLensArc(SDL_Renderer* r, int cx, int cy, int rx, int ry, float arcStart, float arcEnd, Uint8 cr, Uint8 cg,
+                 Uint8 cb, Uint8 alpha) {
+  if (alpha == 0 || rx <= 0 || ry <= 0) return;
+  SDL_SetRenderDrawColor(r, cr, cg, cb, alpha);
+  int px = 0;
+  int py = 0;
+  bool hasPrev = false;
+  constexpr int kSegs = 20;
+  for (int i = 0; i <= kSegs; ++i) {
+    const float u = static_cast<float>(i) / static_cast<float>(kSegs);
+    const float a = arcStart + (arcEnd - arcStart) * u;
+    const int nx = cx + static_cast<int>(std::cos(a) * static_cast<float>(rx));
+    const int ny = cy + static_cast<int>(std::sin(a) * static_cast<float>(ry));
+    if (hasPrev) SDL_RenderDrawLine(r, px, py, nx, ny);
+    px = nx;
+    py = ny;
+    hasPrev = true;
+  }
+}
+
+void DrawFlyingBomb(SDL_Renderer* r, Vec2 center, float radius, float fuseT) {
+  const int cx = static_cast<int>(center.x);
+  const int cy = static_cast<int>(center.y);
+  const int ir = std::max(4, static_cast<int>(radius));
+  const float spin = (1.0f - fuseT) * 6.2831853f;
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+
+  FillDisc(r, cx, cy, ir + 3, 70, 28, 105, 40);
+  FillDisc(r, cx, cy, ir + 1, 42, 16, 68, 85);
+  FillDisc(r, cx, cy, ir, 38, 14, 62, 255);
+  FillDisc(r, cx, cy, static_cast<int>(static_cast<float>(ir) * 0.90f), 95, 32, 98, 255);
+  FillDisc(r, cx, cy, static_cast<int>(static_cast<float>(ir) * 0.74f), 145, 48, 125, 255);
+  FillDisc(r, cx, cy, static_cast<int>(static_cast<float>(ir) * 0.58f), 205, 95, 155, 255);
+
+  const int bandHalfH = std::max(2, ir / 4);
+  const int bandHalfW = ir + 1;
+  const int rSq = ir * ir;
+  for (int dy = -bandHalfH; dy <= bandHalfH; ++dy) {
+    for (int dx = -bandHalfW; dx <= bandHalfW; ++dx) {
+      if (dx * dx + dy * dy > rSq) continue;
+      const float ringU = std::abs(static_cast<float>(dy)) / static_cast<float>(bandHalfH + 1);
+      Uint8 rr = 170;
+      Uint8 gg = 55;
+      Uint8 bb = 150;
+      if (ringU < 0.40f) {
+        rr = 255;
+        gg = 242;
+        bb = 215;
+      } else if (ringU < 0.72f) {
+        rr = 240;
+        gg = 145;
+        bb = 185;
+      }
+      SDL_SetRenderDrawColor(r, rr, gg, bb, 235);
+      SDL_RenderDrawPoint(r, cx + dx, cy + dy);
+    }
+  }
+
+  DrawLensArc(r, cx, cy - ir / 5, ir + 1, std::max(2, ir / 5), 3.14159f * 0.12f, 3.14159f * 0.88f, 120, 55,
+              150, 150);
+  DrawLensArc(r, cx, cy + ir / 5, ir + 1, std::max(2, ir / 5), 3.14159f * 1.12f, 3.14159f * 1.88f, 95, 45, 130,
+              120);
+
+  FillDisc(r, cx, cy, std::max(2, ir / 3), 4, 1, 10, 255);
+
+  const int hx = cx + static_cast<int>(std::cos(spin) * static_cast<float>(ir) * 0.22f);
+  const int hy = cy + static_cast<int>(std::sin(spin) * static_cast<float>(ir) * 0.14f) - 1;
+  FillDisc(r, hx, hy, std::max(2, ir / 5), 255, 248, 225, 110);
+
+  SDL_SetRenderDrawColor(r, 255, 228, 195, 190);
+  DrawCircleOutline(r, center, static_cast<float>(ir) * 0.92f);
+  SDL_SetRenderDrawColor(r, 150, 60, 140, 220);
+  DrawCircleOutline(r, center, static_cast<float>(ir));
 }
 
 } // namespace
@@ -424,28 +494,18 @@ void BombSystem::Render(SDL_Renderer* r,
       if (!b.active) continue;
 
       const Vec2 bombScreen{b.pos.x - cameraX, b.pos.y};
-      SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
-      DrawCircleOutline(r, bombScreen, b.circle.radius);
-
       const float fuseT = slot.fuseLeft / BombTuning::fuseSeconds;
-      SDL_SetRenderDrawColor(r, 180, 180, 180, 255);
-      const int indicator = static_cast<int>(6.0f + (1.0f - fuseT) * 8.0f);
-      SDL_Rect pulse{static_cast<int>(bombScreen.x) - indicator / 2,
-                     static_cast<int>(bombScreen.y - b.circle.radius) - 6,
-                     indicator,
-                     4};
-      SDL_RenderFillRect(r, &pulse);
-      continue;
-    }
+      DrawFlyingBomb(r, bombScreen, b.circle.radius, fuseT);
 
-    if (slot.phase == BombPhase::Exploded && slot.visualLeft > 0.0f) {
-      const float t = 1.0f - (slot.visualLeft / BombTuning::explosionVisualSeconds);
-      const float radius = BombTuning::explosionRadius * (0.35f + 0.65f * t);
-      const Vec2 center{slot.explosionCenter.x - cameraX, slot.explosionCenter.y};
-      SDL_SetRenderDrawColor(r, 150, 70, 255, static_cast<Uint8>(180 * (1.0f - t)));
-      DrawCircleFilled(r, center, radius);
-      SDL_SetRenderDrawColor(r, 120, 50, 220, static_cast<Uint8>(220 * (1.0f - t)));
-      DrawCircleOutline(r, center, radius);
+      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+      const Uint8 fusePulse = static_cast<Uint8>(160.0f + (1.0f - fuseT) * 95.0f);
+      SDL_SetRenderDrawColor(r, 255, 210, 120, fusePulse);
+      const int indicator = static_cast<int>(5.0f + (1.0f - fuseT) * 7.0f);
+      SDL_Rect pulse{static_cast<int>(bombScreen.x) - indicator / 2,
+                     static_cast<int>(bombScreen.y - b.circle.radius) - 7,
+                     indicator,
+                     3};
+      SDL_RenderFillRect(r, &pulse);
     }
   }
 }

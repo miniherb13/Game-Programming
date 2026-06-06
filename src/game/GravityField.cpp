@@ -1,50 +1,12 @@
 #include "game/GravityField.h"
 
+#include "render/VfxLibrary.h"
+
 #include <SDL.h>
 #include <algorithm>
 #include <cmath>
 
 namespace cr {
-
-namespace {
-
-SDL_Rect RectFromCircleScreen(Vec2 screenPos, float r) {
-  SDL_Rect out{};
-  out.x = static_cast<int>(screenPos.x - r);
-  out.y = static_cast<int>(screenPos.y - r);
-  out.w = static_cast<int>(r * 2.0f);
-  out.h = static_cast<int>(r * 2.0f);
-  return out;
-}
-
-void DrawCircleFilled(SDL_Renderer* r, Vec2 screenCenter, float radius) {
-  const int cx = static_cast<int>(screenCenter.x);
-  const int cy = static_cast<int>(screenCenter.y);
-  const int ir = static_cast<int>(radius);
-  for (int y = -ir; y <= ir; y++) {
-    const float wy = static_cast<float>(y);
-    const float halfW = std::sqrt(std::max(0.0f, radius * radius - wy * wy));
-    const int x0 = cx - static_cast<int>(halfW);
-    const int x1 = cx + static_cast<int>(halfW);
-    SDL_RenderDrawLine(r, x0, cy + y, x1, cy + y);
-  }
-}
-
-void DrawCircleOutline(SDL_Renderer* r, Vec2 screenCenter, float radius) {
-  constexpr int segments = 48;
-  int px = static_cast<int>(screenCenter.x + radius);
-  int py = static_cast<int>(screenCenter.y);
-  for (int i = 1; i <= segments; i++) {
-    const float t = static_cast<float>(i) / static_cast<float>(segments) * 6.2831853f;
-    const int nx = static_cast<int>(screenCenter.x + std::cos(t) * radius);
-    const int ny = static_cast<int>(screenCenter.y + std::sin(t) * radius);
-    SDL_RenderDrawLine(r, px, py, nx, ny);
-    px = nx;
-    py = ny;
-  }
-}
-
-} // namespace
 
 GravityFieldSnapshot GravityFieldSnapshot::Save(const FieldSlot& slot) {
   GravityFieldSnapshot out{};
@@ -53,6 +15,7 @@ GravityFieldSnapshot GravityFieldSnapshot::Save(const FieldSlot& slot) {
   out.center = slot.center;
   out.radius = slot.radius;
   out.timeLeft = slot.timeLeft;
+  out.spinAngle = slot.spinAngle;
   out.affectsPlayer = slot.affectsPlayer;
   out.affectsBombs = slot.affectsBombs;
   out.affectsProps = slot.affectsProps;
@@ -65,6 +28,7 @@ void GravityFieldSnapshot::Load(FieldSlot& slot) const {
   slot.center = center;
   slot.radius = radius;
   slot.timeLeft = timeLeft;
+  slot.spinAngle = spinAngle;
   slot.affectsPlayer = affectsPlayer;
   slot.affectsBombs = affectsBombs;
   slot.affectsProps = affectsProps;
@@ -87,6 +51,13 @@ void GravityFieldSystem::LoadSnapshots(
 GravityFieldSystem::GravityFieldSystem()
     : m_slots(static_cast<std::size_t>(GravityFieldTuning::maxFields)) {}
 
+void GravityFieldSystem::ClearAll() {
+  for (auto& field : m_slots) {
+    field.active = false;
+    field.timeLeft = 0.0f;
+  }
+}
+
 void GravityFieldSystem::SpawnBlackHole(Vec2 center) {
   const int slot = AllocateSlot();
   auto& f = m_slots[static_cast<std::size_t>(slot)];
@@ -95,6 +66,7 @@ void GravityFieldSystem::SpawnBlackHole(Vec2 center) {
   f.center = center;
   f.radius = GravityFieldTuning::explosionRadius;
   f.timeLeft = GravityFieldTuning::explosionDuration;
+  f.spinAngle = 0.0f;
   f.affectsPlayer = false;
   f.affectsBombs = false;
   f.affectsProps = false;
@@ -146,6 +118,14 @@ void GravityFieldSystem::FixedUpdate(float dt) {
   }
 }
 
+void GravityFieldSystem::AdvanceSpin(float dt) {
+  constexpr float kSpinRadPerSec = 5.8f;
+  for (auto& field : m_slots) {
+    if (!field.active) continue;
+    field.spinAngle += dt * kSpinRadPerSec;
+  }
+}
+
 void GravityFieldSystem::ApplyForces(PhysicsWorld& world,
                                      int playerId,
                                      const std::vector<int>& bombIds,
@@ -175,47 +155,36 @@ void GravityFieldSystem::ApplyForces(PhysicsWorld& world,
   for (int id : propIds) applyTo(id);
 }
 
+void GravityFieldSystem::AppendActiveVisuals(std::vector<ActiveVisual>& out) const {
+  for (const auto& field : m_slots) {
+    if (!field.active) continue;
+    ActiveVisual v{};
+    v.center = field.center;
+    v.radius = field.radius;
+    v.lifeT = std::clamp(field.timeLeft / GravityFieldTuning::explosionDuration, 0.0f, 1.0f);
+    v.spinAngle = field.spinAngle;
+    out.push_back(v);
+  }
+}
+
 bool GravityFieldSystem::ToggleDebug() {
   m_debug = !m_debug;
   return m_debug;
 }
 
-void GravityFieldSystem::Render(SDL_Renderer* r, float cameraX) const {
+void GravityFieldSystem::Render(SDL_Renderer* r, float cameraX, float darkBackdropStrength) const {
   for (const auto& field : m_slots) {
     if (!field.active) continue;
 
     const Vec2 screen{field.center.x - cameraX, field.center.y};
     const float lifeT =
         std::clamp(field.timeLeft / GravityFieldTuning::explosionDuration, 0.0f, 1.0f);
-    const float pulse = 0.88f + 0.12f * std::sin((1.0f - lifeT) * 18.0f);
 
-    const bool attract = field.mode == FieldMode::Attract;
-    const SDL_Color ring = attract ? SDL_Color{150, 70, 255, 220} : SDL_Color{70, 210, 255, 220};
-    const SDL_Color fill = attract ? SDL_Color{90, 40, 120, 45} : SDL_Color{40, 100, 140, 45};
-
-    SDL_SetRenderDrawColor(r, fill.r, fill.g, fill.b, fill.a);
-    DrawCircleFilled(r, screen, field.radius * pulse);
-
-    SDL_SetRenderDrawColor(r, ring.r, ring.g, ring.b, ring.a);
-    DrawCircleOutline(r, screen, field.radius * pulse);
-
-    // Radial hint lines
-    constexpr int spokes = 8;
-    for (int i = 0; i < spokes; i++) {
-      const float a = static_cast<float>(i) / static_cast<float>(spokes) * 6.2831853f;
-      const Vec2 dir{std::cos(a), std::sin(a)};
-      const float inner = field.radius * 0.25f * pulse;
-      const float outer = field.radius * (attract ? 0.55f : 0.82f) * pulse;
-      const Vec2 p0 = screen + dir * inner;
-      const Vec2 p1 = screen + dir * (attract ? outer : outer * 0.95f);
-      SDL_RenderDrawLine(r,
-                         static_cast<int>(p0.x),
-                         static_cast<int>(p0.y),
-                         static_cast<int>(p1.x),
-                         static_cast<int>(p1.y));
-    }
+    VfxLibrary::Instance().DrawBlackHole(r, screen.x, screen.y, field.radius, lifeT, field.spinAngle,
+                                         darkBackdropStrength);
 
     if (m_debug) {
+      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
       SDL_SetRenderDrawColor(r, 255, 255, 120, 200);
       SDL_Rect centerDot{static_cast<int>(screen.x) - 3, static_cast<int>(screen.y) - 3, 6, 6};
       SDL_RenderFillRect(r, &centerDot);
@@ -240,6 +209,7 @@ void GravityFieldSystem::Render(SDL_Renderer* r, float cameraX) const {
                              static_cast<int>(sampleScreen.y + arrow.y));
         }
       }
+      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }
   }
 }

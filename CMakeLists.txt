@@ -36,10 +36,13 @@ add_executable(chrono_rush_demo
   src/game/Bomb.cpp
   src/game/GravityField.cpp
   src/game/PlayerSprite.cpp
+  src/game/ItemSprites.cpp
+  src/game/ObstacleSprites.cpp
   src/game/Game.cpp
   src/game/StageMap.cpp
   src/game/StageGlacier.cpp
   src/render/UiText.cpp
+  src/render/VfxLibrary.cpp
 )
 
 target_include_directories(chrono_rush_demo PRIVATE

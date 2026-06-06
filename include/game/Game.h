@@ -3,6 +3,8 @@
 #include "core/Input.h"
 #include "game/Bomb.h"
 #include "game/GravityField.h"
+#include "game/ItemSprites.h"
+#include "game/ObstacleSprites.h"
 #include "game/PlayerSprite.h"
 #include "game/StageGlacier.h"
 #include "game/StageMap.h"
@@ -57,6 +59,10 @@ struct Particle {
   float life    = 0.0f;
   float maxLife = 0.0f;
   float gravity = 400.0f;
+  float size    = 5.0f;
+  float drag    = 0.0f;
+  bool  glow        = false;
+  bool  rewindSpark = false;
   Uint8 r = 255, g = 255, b = 255;
 };
 
@@ -65,6 +71,7 @@ struct RewindGhost {
   Vec2  pos{};
   float life    = 0.0f;
   float maxLife = 0.0f;
+  float age01   = 0.0f;
 };
 
 // 텍스트 팝업
@@ -90,6 +97,7 @@ public:
   void InitRenderer(SDL_Renderer* renderer);
   void HandleInput(float dt, Input& input);
   void FixedUpdate(float dt, const InputState& input, Input& inputDevice);
+  void UpdateVisualEffects(float dt);
   void Render(SDL_Renderer* r) const;
 
   bool WantsQuit() const { return m_quit; }
@@ -106,7 +114,12 @@ private:
   void UpdateObstacles(float dt);
   void SpawnItem(float x, ItemType type);
   void UpdateItems(float dt);
-  void SpawnParticles(Vec2 center, int count, Uint8 r, Uint8 g, Uint8 b);
+  void SpawnParticles(Vec2 center, int count, Uint8 r, Uint8 g, Uint8 b,
+                      float size = 5.0f, bool glow = false);
+  void SpawnExplosionVfx(Vec2 center);
+  void SpawnBlackHoleOrbitParticle(Vec2 center, float radius, float spinHint);
+  void UpdateBlackHoleParticles(float dt);
+  void SpawnRewindOrbitParticle(Vec2 playerCenter);
   void UpdateParticles(float dt);
   void AddPopup(const std::string& text, float x, float y, Uint8 r, Uint8 g, Uint8 b);
   void UpdatePopups(float dt);
@@ -116,6 +129,7 @@ private:
   void DrawStar(SDL_Renderer* r, float cx, float cy, float size, Uint8 rr, Uint8 gg, Uint8 bb) const;
   void CheckGameOver();
   void CheckCollision();
+  void TriggerGameOver();
   void PreventPlayerObstacleClimb();
   void ClampPlayerToGround();
   void Restart();
@@ -131,6 +145,7 @@ private:
   void ResetPlayerPositionHistory(Vec2 pos);
   void SpawnRewindVfx(Vec2 playerCenter);
   void UpdateRewindVfx(float dt);
+  void UpdateRewindVisuals(float dt);
   void DrawRewindGhosts(SDL_Renderer* r, float camX) const;
   void DrawRewindVortex(SDL_Renderer* r, float camX) const;
   void DrawRewindScreenFx(SDL_Renderer* r) const;
@@ -141,6 +156,7 @@ private:
   void UpdateClearCelebration(float dt);
   void SpawnFireworkBurst(float screenX, float screenY);
   void DrawClearOverlay(SDL_Renderer* r) const;
+  void DrawGameplayHud(SDL_Renderer* r) const;
   void ReturnToTitle();
 
   int m_w = 0;
@@ -157,6 +173,8 @@ private:
   BombSystem m_bombs{16};
   GravityFieldSystem m_fields;
   PlayerSprite m_playerSprite;
+  ItemSprites m_itemSprites;
+  ObstacleSprites m_obstacleSprites;
   StageMap m_stage;
   StageGlacier m_glacier;
   std::vector<int>       m_propIds;
@@ -179,8 +197,10 @@ private:
   float m_rewindFreezeLeft     = 0.0f;
   float m_rewindFxTimer        = 0.0f;
   float m_rewindVortexAngle    = 0.0f;
+  float m_rewindParticleAcc    = 0.0f;
+  float m_blackHoleParticleAcc = 0.0f;
   Vec2  m_rewindVortexCenter{};
-  std::array<Vec2, 5> m_playerPosHistory{};
+  std::array<Vec2, 6> m_playerPosHistory{};
   int m_playerPosHistoryCount  = 0;
   std::vector<RewindGhost>     m_rewindGhosts;
 

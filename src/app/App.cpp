@@ -66,6 +66,7 @@ int App::Run() {
         hadFixedStep = true;
       }
       input.FinishGameplayFrame(hadFixedStep);
+      game.UpdateVisualEffects(static_cast<float>(dt));
     } else {
       acc = 0.0;
       input.ClearGameplayPending();

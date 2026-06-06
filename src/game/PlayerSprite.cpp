@@ -311,6 +311,19 @@ void PlayerSprite::DrawFrame(SDL_Renderer* renderer,
   SDL_RenderCopy(renderer, static_cast<SDL_Texture*>(frame.texture), &src, &dst);
 }
 
+void PlayerSprite::DrawGhost(SDL_Renderer* renderer, float screenX, float footY, Uint8 alpha) const {
+  if (!m_gpuReady || alpha == 0) return;
+
+  const int targetContentH = std::max(1, static_cast<int>(kDisplayHeight));
+  const FrameTex& frame = m_jump;
+  auto* tex = static_cast<SDL_Texture*>(frame.texture);
+  SDL_SetTextureAlphaMod(tex, alpha);
+  SDL_SetTextureColorMod(tex, 40, 45, 55);
+  DrawFrame(renderer, frame, screenX, footY, targetContentH);
+  SDL_SetTextureAlphaMod(tex, 255);
+  SDL_SetTextureColorMod(tex, 255, 255, 255);
+}
+
 void PlayerSprite::Draw(SDL_Renderer* renderer,
                         float screenX,
                         float footY,

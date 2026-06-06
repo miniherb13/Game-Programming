@@ -1,5 +1,7 @@
 #pragma once
 
+#include <SDL_stdinc.h>
+
 #include <vector>
 
 struct SDL_Renderer;
@@ -23,6 +25,8 @@ public:
             bool throwRelease,
             float throwCharge01,
             float runAnimPhase) const;
+
+  void DrawGhost(SDL_Renderer* renderer, float screenX, float footY, Uint8 alpha) const;
 
   bool IsReady() const { return m_gpuReady; }
 

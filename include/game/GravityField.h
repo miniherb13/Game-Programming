@@ -33,6 +33,7 @@ struct FieldSlot {
   Vec2 center{};
   float radius = GravityFieldTuning::explosionRadius;
   float timeLeft = 0.0f;
+  float spinAngle = 0.0f;
   bool affectsPlayer = true;
   bool affectsBombs = true;
   bool affectsProps = true;
@@ -44,6 +45,7 @@ struct GravityFieldSnapshot {
   Vec2 center{};
   float radius = 0.0f;
   float timeLeft = 0.0f;
+  float spinAngle = 0.0f;
   bool affectsPlayer = true;
   bool affectsBombs = true;
   bool affectsProps = true;
@@ -57,20 +59,30 @@ public:
   GravityFieldSystem();
 
   void SpawnBlackHole(Vec2 center);
+  void ClearAll();
 
   void FixedUpdate(float dt);
+  void AdvanceSpin(float dt);
   void ApplyForces(PhysicsWorld& world,
                    int playerId,
                    const std::vector<int>& bombIds,
                    const std::vector<int>& propIds) const;
 
-  void Render(SDL_Renderer* r, float cameraX) const;
+  void Render(SDL_Renderer* r, float cameraX, float darkBackdropStrength = 0.0f) const;
 
   bool ToggleDebug();
   bool DebugEnabled() const { return m_debug; }
 
   void SaveSnapshots(std::array<GravityFieldSnapshot, GravityFieldTuning::maxFields>& out) const;
   void LoadSnapshots(const std::array<GravityFieldSnapshot, GravityFieldTuning::maxFields>& in);
+
+  struct ActiveVisual {
+    Vec2 center{};
+    float radius = 0.0f;
+    float lifeT = 0.0f;
+    float spinAngle = 0.0f;
+  };
+  void AppendActiveVisuals(std::vector<ActiveVisual>& out) const;
 
 private:
   int AllocateSlot() const;

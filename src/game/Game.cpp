@@ -2,10 +2,12 @@
 
 #include "core/Log.h"
 #include "math/Vec2.h"
+#include "render/VfxLibrary.h"
 
 #include <SDL.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 
@@ -16,24 +18,276 @@ namespace {
 constexpr float kPlayerDisplayHeight = 82.0f;
 constexpr float kRewindPoseSeconds   = 1.0f;
 constexpr float kRewindStaminaCost   = 3.0f;
-constexpr float kRewindFxSeconds     = 1.0f; // 0.5s fade-in + 0.5s fade-out
-constexpr int   kRewindConvergeParticles = 36;
+constexpr float kRewindFxSeconds     = 1.4f; // 0.7s fade-in + 0.7s fade-out
+constexpr int   kRewindConvergeParticles = 340;
+constexpr int   kRewindSparkParticles    = 220;
+constexpr int   kRewindRingParticles     = 200;
+constexpr int   kMaxParticles            = 6500;
 constexpr float kStageNotifyDuration = 3.0f;
 constexpr float kHitInvincibleTime   = 0.5f;
 constexpr float kRewindInvincibleTime = 2.0f;
 constexpr float kRewindFreezeSeconds  = 0.5f;
+constexpr float kRewindSpinRadPerSec  = 5.5f;
 constexpr float kStartGraceSeconds    = 1.0f;
 constexpr float kItemMagnetRadius     = 110.0f;
 constexpr float kItemMagnetPullSpeed  = 95.0f;
 
 // In-game HUD layout (1280x720 baseline; avoids bar/key/score overlap).
 constexpr int kHudMargin   = 12;
-constexpr int kHudBarW     = 200;
+constexpr int kHudBarW     = 310;
 constexpr int kHudBarH     = 10;
+constexpr int kHudHpBarH   = 14;
+constexpr int kHudHpBadgeR = 11;
 constexpr int kHudBarGap   = 4;
-constexpr int kHudKeyStep  = 26;
 constexpr int kHudDistBarW = 210;
+constexpr int kHudEnergyH  = 8;
 constexpr float kClearFireworkInterval = 0.35f;
+
+constexpr float kItemDisplaySize = 36.0f;
+
+ItemSpriteId ItemSpriteFor(ItemType type) {
+  switch (type) {
+  case ItemType::Health: return ItemSpriteId::Health;
+  case ItemType::Stamina: return ItemSpriteId::Stamina;
+  case ItemType::Shield: return ItemSpriteId::Shield;
+  }
+  return ItemSpriteId::Health;
+}
+
+ObstacleSpriteId ObstacleSpriteFor(ObstacleType type) {
+  switch (type) {
+  case ObstacleType::Normal: return ObstacleSpriteId::Normal;
+  case ObstacleType::Tall: return ObstacleSpriteId::Tall;
+  case ObstacleType::Bounce: return ObstacleSpriteId::Bounce;
+  case ObstacleType::Spike: return ObstacleSpriteId::Spike;
+  case ObstacleType::Triangle: return ObstacleSpriteId::Triangle;
+  case ObstacleType::Ceiling: return ObstacleSpriteId::Ceiling;
+  case ObstacleType::Moving: return ObstacleSpriteId::Moving;
+  }
+  return ObstacleSpriteId::Normal;
+}
+
+float ObstacleSpriteHeight(ObstacleType type, float radius) {
+  switch (type) {
+  case ObstacleType::Tall: return radius * 2.35f;
+  case ObstacleType::Ceiling: return radius * 2.0f;
+  default: return radius * 2.2f;
+  }
+}
+
+void DrawWhiteRectOutline(SDL_Renderer* r, SDL_Rect rc) {
+  SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+  SDL_RenderDrawRect(r, &rc);
+  rc.x -= 1;
+  rc.y -= 1;
+  rc.w += 2;
+  rc.h += 2;
+  SDL_RenderDrawRect(r, &rc);
+}
+
+void FillGradientBarH(SDL_Renderer* r,
+                      const SDL_Rect& rect,
+                      float fill01,
+                      Uint8 r0,
+                      Uint8 g0,
+                      Uint8 b0,
+                      Uint8 r1,
+                      Uint8 g1,
+                      Uint8 b1) {
+  const int fillW = static_cast<int>(static_cast<float>(rect.w) * std::clamp(fill01, 0.0f, 1.0f));
+  if (fillW <= 0) return;
+  for (int x = 0; x < fillW; ++x) {
+    const float u = fillW <= 1 ? 1.0f : static_cast<float>(x) / static_cast<float>(fillW - 1);
+    SDL_SetRenderDrawColor(r,
+                           static_cast<Uint8>(r0 + static_cast<int>((r1 - r0) * u)),
+                           static_cast<Uint8>(g0 + static_cast<int>((g1 - g0) * u)),
+                           static_cast<Uint8>(b0 + static_cast<int>((b1 - b0) * u)),
+                           255);
+    SDL_RenderDrawLine(r, rect.x + x, rect.y, rect.x + x, rect.y + rect.h - 1);
+  }
+}
+
+void DrawHudBarShell(SDL_Renderer* r, const SDL_Rect& rect) {
+  SDL_SetRenderDrawColor(r, 16, 18, 28, 230);
+  SDL_RenderFillRect(r, &rect);
+  SDL_SetRenderDrawColor(r, 70, 78, 110, 255);
+  SDL_RenderDrawRect(r, &rect);
+}
+
+bool IsInsideCapsule(int x, int y, const SDL_Rect& bar) {
+  if (y < bar.y || y >= bar.y + bar.h) return false;
+  if (x < bar.x || x >= bar.x + bar.w) return false;
+
+  const int r = bar.h / 2;
+  const int cy = bar.y + r;
+  if (x < bar.x + r) {
+    const int dx = x - (bar.x + r);
+    const int dy = y - cy;
+    return dx * dx + dy * dy <= r * r;
+  }
+  if (x >= bar.x + bar.w - r) {
+    const int dx = x - (bar.x + bar.w - r);
+    const int dy = y - cy;
+    return dx * dx + dy * dy <= r * r;
+  }
+  return true;
+}
+
+void FillDisc(SDL_Renderer* r, int cx, int cy, int radius, Uint8 cr, Uint8 cg, Uint8 cb, Uint8 alpha) {
+  SDL_SetRenderDrawColor(r, cr, cg, cb, alpha);
+  for (int y = -radius; y <= radius; ++y) {
+    const int halfW = static_cast<int>(std::sqrt(std::max(0, radius * radius - y * y)));
+    SDL_RenderDrawLine(r, cx - halfW, cy + y, cx + halfW, cy + y);
+  }
+}
+
+void FillCapsule(SDL_Renderer* renderer, const SDL_Rect& bar, Uint8 cr, Uint8 cg, Uint8 cb, Uint8 alpha) {
+  if (bar.w <= 0 || bar.h <= 0) return;
+  SDL_SetRenderDrawColor(renderer, cr, cg, cb, alpha);
+  const int capR = bar.h / 2;
+  if (bar.w >= bar.h) {
+    SDL_Rect mid{bar.x + capR, bar.y, bar.w - bar.h, bar.h};
+    SDL_RenderFillRect(renderer, &mid);
+  }
+  FillDisc(renderer, bar.x + capR, bar.y + capR, capR, cr, cg, cb, alpha);
+  FillDisc(renderer, bar.x + bar.w - capR, bar.y + capR, capR, cr, cg, cb, alpha);
+}
+
+void DrawCapsuleOutline(SDL_Renderer* renderer, const SDL_Rect& bar, Uint8 cr, Uint8 cg, Uint8 cb, Uint8 alpha) {
+  if (bar.w <= 0 || bar.h <= 0) return;
+  SDL_SetRenderDrawColor(renderer, cr, cg, cb, alpha);
+  const int capR = bar.h / 2;
+  const int cy = bar.y + capR;
+
+  if (bar.w >= bar.h) {
+    SDL_RenderDrawLine(renderer, bar.x + capR, bar.y, bar.x + bar.w - capR, bar.y);
+    SDL_RenderDrawLine(renderer, bar.x + capR, bar.y + bar.h - 1, bar.x + bar.w - capR, bar.y + bar.h - 1);
+  }
+
+  constexpr int kSeg = 24;
+  for (int cap = 0; cap < 2; ++cap) {
+    const int ccx = cap == 0 ? bar.x + capR : bar.x + bar.w - capR;
+    int px = ccx + capR;
+    int py = cy;
+    for (int i = 1; i <= kSeg; ++i) {
+      const float ang = static_cast<float>(i) / static_cast<float>(kSeg) * 3.14159265f;
+      const int nx = ccx + static_cast<int>(std::cos(ang) * static_cast<float>(capR));
+      const int ny = cy + static_cast<int>(std::sin(ang) * static_cast<float>(capR) * (cap == 0 ? -1.0f : 1.0f));
+      SDL_RenderDrawLine(renderer, px, py, nx, ny);
+      px = nx;
+      py = ny;
+    }
+  }
+}
+
+void FillCookieStripedCapsule(SDL_Renderer* r,
+                              const SDL_Rect& bar,
+                              float fill01,
+                              Uint8 stripe0R,
+                              Uint8 stripe0G,
+                              Uint8 stripe0B,
+                              Uint8 stripe1R,
+                              Uint8 stripe1G,
+                              Uint8 stripe1B) {
+  const float clamped = std::clamp(fill01, 0.0f, 1.0f);
+  const int fillW = std::max(1, static_cast<int>(static_cast<float>(bar.w) * clamped));
+
+  for (int y = bar.y; y < bar.y + bar.h; ++y) {
+    for (int x = bar.x; x < bar.x + fillW; ++x) {
+      if (!IsInsideCapsule(x, y, bar)) continue;
+      const bool stripeA = ((x - y) / 3) % 2 == 0;
+      if (stripeA) {
+        SDL_SetRenderDrawColor(r, stripe0R, stripe0G, stripe0B, 255);
+      } else {
+        SDL_SetRenderDrawColor(r, stripe1R, stripe1G, stripe1B, 255);
+      }
+      SDL_RenderDrawPoint(r, x, y);
+    }
+  }
+
+  if (fillW > 2) {
+    const int edgeX = bar.x + fillW - 1;
+    for (int y = bar.y + 1; y < bar.y + bar.h - 1; ++y) {
+      if (!IsInsideCapsule(edgeX, y, bar)) continue;
+      SDL_SetRenderDrawColor(r, 255, 255, 255, 230);
+      SDL_RenderDrawPoint(r, edgeX, y);
+      if (IsInsideCapsule(edgeX - 1, y, bar)) {
+        SDL_SetRenderDrawColor(r, 255, 255, 255, 110);
+        SDL_RenderDrawPoint(r, edgeX - 1, y);
+      }
+    }
+  }
+}
+
+void DrawCookieRunBarShell(SDL_Renderer* r,
+                           const SDL_Rect& bar,
+                           Uint8 trackR,
+                           Uint8 trackG,
+                           Uint8 trackB,
+                           Uint8 outlineR,
+                           Uint8 outlineG,
+                           Uint8 outlineB,
+                           Uint8 highlightR,
+                           Uint8 highlightG,
+                           Uint8 highlightB) {
+  FillCapsule(r, bar, trackR, trackG, trackB, 235);
+  DrawCapsuleOutline(r, bar, outlineR, outlineG, outlineB, 255);
+  if (bar.h >= 4) {
+    SDL_SetRenderDrawColor(r, highlightR, highlightG, highlightB, 90);
+    SDL_RenderDrawLine(r, bar.x + bar.h / 2, bar.y + 1, bar.x + bar.w - bar.h / 2, bar.y + 1);
+  }
+}
+
+void DrawCookieRunHpBarShell(SDL_Renderer* r, const SDL_Rect& bar) {
+  DrawCookieRunBarShell(r, bar, 28, 16, 22, 12, 8, 10, 55, 42, 38);
+}
+
+void DrawMiniHeart(SDL_Renderer* r, float cx, float cy, float size, Uint8 rr, Uint8 gg, Uint8 bb) {
+  SDL_SetRenderDrawColor(r, rr, gg, bb, 255);
+  for (int row = 0; row < static_cast<int>(size * 2); row++) {
+    const float t = static_cast<float>(row) / (size * 2.0f);
+    const float y = cy - size + static_cast<float>(row);
+    float halfW = 0.0f;
+    if (t < 0.5f) {
+      const float tt = t * 2.0f;
+      halfW = size * (0.5f + 0.5f * std::sqrt(std::max(0.0f, 1.0f - (tt - 0.5f) * (tt - 0.5f) * 4.0f)));
+    } else {
+      const float tt = (t - 0.5f) * 2.0f;
+      halfW = size * (1.0f - tt);
+    }
+    SDL_RenderDrawLine(r,
+                       static_cast<int>(cx - halfW),
+                       static_cast<int>(y),
+                       static_cast<int>(cx + halfW),
+                       static_cast<int>(y));
+  }
+}
+
+void DrawHpHeartBadge(SDL_Renderer* r, float cx, float cy, const ItemSprites* items) {
+  FillDisc(r, static_cast<int>(cx), static_cast<int>(cy), kHudHpBadgeR + 2, 210, 150, 35, 255);
+  FillDisc(r, static_cast<int>(cx), static_cast<int>(cy), kHudHpBadgeR, 52, 32, 22, 255);
+
+  if (items && items->IsReady()) {
+    items->Draw(r, ItemSpriteId::Health, cx, cy + 1.0f, 16.0f);
+  } else {
+    DrawMiniHeart(r, cx, cy + 1.0f, 6.0f, 255, 70, 90);
+  }
+}
+
+void DrawStaminaBadge(SDL_Renderer* r, float cx, float cy, const ItemSprites* items) {
+  FillDisc(r, static_cast<int>(cx), static_cast<int>(cy), kHudHpBadgeR + 2, 170, 210, 55, 255);
+  FillDisc(r, static_cast<int>(cx), static_cast<int>(cy), kHudHpBadgeR, 24, 48, 28, 255);
+
+  if (items && items->IsReady()) {
+    items->Draw(r, ItemSpriteId::Stamina, cx, cy + 1.0f, 16.0f);
+  } else {
+    SDL_SetRenderDrawColor(r, 120, 230, 90, 255);
+    const int ix = static_cast<int>(cx);
+    const int iy = static_cast<int>(cy);
+    SDL_RenderDrawLine(r, ix + 4, iy - 6, ix - 2, iy + 2);
+    SDL_RenderDrawLine(r, ix - 2, iy + 2, ix + 6, iy + 6);
+  }
+}
 
 } // namespace
 
@@ -70,6 +324,7 @@ Game::Game(int width, int height)
 
   m_bombs.InitPool(m_world);
   m_bombs.SetExplosionHandler([this](Vec2 center) {
+    SpawnExplosionVfx(center);
     m_fields.SpawnBlackHole(center);
     for (auto& obs : m_obstacles) {
       auto& body = m_world.Get(obs.bodyId);
@@ -123,13 +378,19 @@ Game::Game(int width, int height)
   m_nextItemX  = m_nextSpawnX;
 
   if (!m_playerSprite.Load())  Log(LogLevel::Error, "Failed to load assets/player/*.png");
+  if (!m_itemSprites.Load())   Log(LogLevel::Warn,  "Item icons missing (assets/items/*.png)");
+  if (!m_obstacleSprites.Load()) Log(LogLevel::Warn, "Mars obstacle sprites missing (assets/stages/mars/obstacles/*.png)");
   if (!m_stage.LoadMars())     Log(LogLevel::Warn,  "Mars stage assets missing");
   if (!m_glacier.Load())       Log(LogLevel::Warn,  "Glacier stage assets missing");
 }
 
-Game::~Game() { m_ui.Shutdown(); }
+Game::~Game() {
+  m_ui.Shutdown();
+  VfxLibrary::Instance().Shutdown();
+}
 
-void Game::InitRenderer(SDL_Renderer* /*renderer*/) {
+void Game::InitRenderer(SDL_Renderer* renderer) {
+  if (!VfxLibrary::Instance().Init(renderer)) Log(LogLevel::Warn, "VFX glow textures unavailable");
   if (!m_ui.Init(19)) Log(LogLevel::Warn, "UI text disabled (font load failed)");
 }
 
@@ -296,7 +557,7 @@ void Game::UpdateObstacles(float dt) {
   }
 }
 
-void Game::SpawnParticles(Vec2 center, int count, Uint8 r, Uint8 g, Uint8 b) {
+void Game::SpawnParticles(Vec2 center, int count, Uint8 r, Uint8 g, Uint8 b, float size, bool glow) {
   for (int i = 0; i < count; i++) {
     Particle pt;
     pt.pos = center;
@@ -305,9 +566,176 @@ void Game::SpawnParticles(Vec2 center, int count, Uint8 r, Uint8 g, Uint8 b) {
     pt.vel    = {std::cos(angle) * speed, std::sin(angle) * speed - 100.0f};
     pt.maxLife = 0.4f + static_cast<float>(std::rand() % 40) / 100.0f;
     pt.life   = pt.maxLife;
+    pt.size   = size + static_cast<float>(std::rand() % 4);
+    pt.glow   = glow;
     pt.r = r; pt.g = g; pt.b = b;
     m_particles.push_back(pt);
   }
+}
+
+void Game::SpawnExplosionVfx(Vec2 center) {
+  // Outward debris burst.
+  for (int i = 0; i < 95; ++i) {
+    Particle pt;
+    pt.pos = center;
+    const float angle = static_cast<float>(std::rand() % 360) * 3.14159f / 180.0f;
+    const float speed = 140.0f + static_cast<float>(std::rand() % 320);
+    pt.vel = {std::cos(angle) * speed, std::sin(angle) * speed - 60.0f};
+    pt.maxLife = 0.35f + static_cast<float>(std::rand() % 45) / 100.0f;
+    pt.life = pt.maxLife;
+    pt.size = 3.0f + static_cast<float>(std::rand() % 7);
+    pt.drag = 2.5f;
+    pt.glow = (std::rand() % 100) < 65;
+    pt.r = static_cast<Uint8>(120 + std::rand() % 70);
+    pt.g = static_cast<Uint8>(35 + std::rand() % 55);
+    pt.b = static_cast<Uint8>(130 + std::rand() % 80);
+    m_particles.push_back(pt);
+  }
+
+  // Inward spiraling embers sucked toward the singularity.
+  for (int i = 0; i < 110; ++i) {
+    Particle pt;
+    const float angle = static_cast<float>(std::rand() % 360) * 3.14159f / 180.0f;
+    const float dist = 28.0f + static_cast<float>(std::rand() % 220);
+    pt.pos = {center.x + std::cos(angle) * dist, center.y + std::sin(angle) * dist};
+
+    Vec2 toCenter = center - pt.pos;
+    const float len = toCenter.Len();
+    if (len > 1e-4f) toCenter = toCenter / len;
+    Vec2 tangent{-toCenter.y, toCenter.x};
+    const float spinDir = (std::rand() % 2 == 0) ? 1.0f : -1.0f;
+    const float speed = 180.0f + static_cast<float>(std::rand() % 220);
+    pt.vel = toCenter * speed + tangent * (spinDir * (130.0f + static_cast<float>(std::rand() % 120)));
+    pt.gravity = 0.0f;
+    pt.drag = 1.2f;
+    pt.maxLife = 0.55f + static_cast<float>(std::rand() % 40) / 100.0f;
+    pt.life = pt.maxLife;
+    pt.size = 2.0f + static_cast<float>(std::rand() % 6);
+    pt.glow = true;
+    pt.r = static_cast<Uint8>(85 + std::rand() % 70);
+    pt.g = static_cast<Uint8>(30 + std::rand() % 55);
+    pt.b = static_cast<Uint8>(120 + std::rand() % 75);
+    m_particles.push_back(pt);
+  }
+
+  // Slow drifting sparks in the blast radius.
+  for (int i = 0; i < 55; ++i) {
+    Particle pt;
+    const float angle = static_cast<float>(std::rand() % 360) * 3.14159f / 180.0f;
+    const float dist = static_cast<float>(std::rand() % 100);
+    pt.pos = {center.x + std::cos(angle) * dist, center.y + std::sin(angle) * dist};
+    pt.vel = {std::cos(angle) * 40.0f, std::sin(angle) * 40.0f - 20.0f};
+    pt.gravity = 0.0f;
+    pt.drag = 0.6f;
+    pt.maxLife = 0.75f + static_cast<float>(std::rand() % 40) / 100.0f;
+    pt.life = pt.maxLife;
+    pt.size = 1.5f + static_cast<float>(std::rand() % 4);
+    pt.glow = true;
+    pt.r = static_cast<Uint8>(90 + std::rand() % 60);
+    pt.g = static_cast<Uint8>(40 + std::rand() % 45);
+    pt.b = static_cast<Uint8>(150 + std::rand() % 70);
+    m_particles.push_back(pt);
+  }
+}
+
+void Game::SpawnBlackHoleOrbitParticle(Vec2 center, float radius, float spinHint) {
+  const float angle = static_cast<float>(std::rand() % 360) * 3.14159f / 180.0f;
+  const float dist = radius * (0.42f + static_cast<float>(std::rand() % 58) / 100.0f);
+  Particle pt;
+  pt.pos = {center.x + std::cos(angle) * dist, center.y + std::sin(angle) * dist};
+
+  Vec2 toCenter = center - pt.pos;
+  const float len = toCenter.Len();
+  if (len > 1e-4f) toCenter = toCenter / len;
+  Vec2 tangent{-toCenter.y, toCenter.x};
+  const float orbitSpeed = 140.0f + static_cast<float>(std::rand() % 180);
+  const float spinDir = (std::rand() % 2 == 0) ? 1.0f : -1.0f;
+  pt.vel = toCenter * (110.0f + static_cast<float>(std::rand() % 120)) +
+           tangent * (orbitSpeed * spinDir + spinHint * 0.22f);
+  pt.gravity = 0.0f;
+  pt.drag = 0.42f;
+  pt.maxLife = 0.34f + static_cast<float>(std::rand() % 36) / 100.0f;
+  pt.life = pt.maxLife;
+  pt.size = 1.0f + static_cast<float>(std::rand() % 3);
+  pt.glow = false;
+  pt.rewindSpark = false;
+  const int tone = std::rand() % 100;
+  if (tone < 8) {
+    pt.r = 235;
+    pt.g = static_cast<Uint8>(200 + std::rand() % 35);
+    pt.b = static_cast<Uint8>(140 + std::rand() % 40);
+  } else if (tone < 70) {
+    pt.r = static_cast<Uint8>(95 + std::rand() % 65);
+    pt.g = static_cast<Uint8>(35 + std::rand() % 45);
+    pt.b = static_cast<Uint8>(130 + std::rand() % 60);
+  } else {
+    pt.r = static_cast<Uint8>(70 + std::rand() % 40);
+    pt.g = static_cast<Uint8>(25 + std::rand() % 30);
+    pt.b = static_cast<Uint8>(95 + std::rand() % 45);
+  }
+  m_particles.push_back(pt);
+}
+
+void Game::UpdateBlackHoleParticles(float dt) {
+  std::vector<GravityFieldSystem::ActiveVisual> fields;
+  m_fields.AppendActiveVisuals(fields);
+  if (fields.empty()) {
+    m_blackHoleParticleAcc = 0.0f;
+    return;
+  }
+
+  m_blackHoleParticleAcc += dt;
+  constexpr float kSpawnInterval = 0.014f;
+  while (m_blackHoleParticleAcc >= kSpawnInterval) {
+    m_blackHoleParticleAcc -= kSpawnInterval;
+    for (const auto& field : fields) {
+      if (field.lifeT <= 0.05f) continue;
+      SpawnBlackHoleOrbitParticle(field.center, field.radius, field.spinAngle);
+      if ((std::rand() % 100) < 40) {
+        SpawnBlackHoleOrbitParticle(field.center, field.radius * 0.9f, field.spinAngle);
+      }
+    }
+  }
+}
+
+void Game::SpawnRewindOrbitParticle(Vec2 playerCenter) {
+  Particle pt;
+  const float angle = static_cast<float>(std::rand() % 360) * 3.14159f / 180.0f;
+  const float dist = 90.0f + static_cast<float>(std::rand() % 260);
+  pt.pos = {playerCenter.x + std::cos(angle) * dist, playerCenter.y + std::sin(angle) * dist};
+
+  Vec2 toCenter = playerCenter - pt.pos;
+  const float len = toCenter.Len();
+  if (len > 1e-4f) toCenter = toCenter / len;
+  Vec2 tangent{-toCenter.y, toCenter.x};
+  const float spinDir = (std::rand() % 2 == 0) ? 1.0f : -1.0f;
+  const float speed = 260.0f + static_cast<float>(std::rand() % 280);
+  pt.vel = toCenter * speed + tangent * (spinDir * (150.0f + static_cast<float>(std::rand() % 180)));
+  pt.gravity = 0.0f;
+  pt.drag = 0.68f;
+  pt.maxLife = 0.42f + static_cast<float>(std::rand() % 36) / 100.0f;
+  pt.life = pt.maxLife;
+  pt.size = 1.0f + static_cast<float>(std::rand() % 4);
+  pt.glow = false;
+  pt.rewindSpark = true;
+  const int tone = std::rand() % 100;
+  if (tone < 38) {
+    pt.r = 255;
+    pt.g = static_cast<Uint8>(200 + std::rand() % 45);
+    pt.b = static_cast<Uint8>(70 + std::rand() % 70);
+  } else if (tone < 68) {
+    const Uint8 w = static_cast<Uint8>(215 + std::rand() % 40);
+    pt.r = pt.g = pt.b = w;
+  } else if (tone < 86) {
+    pt.r = static_cast<Uint8>(80 + std::rand() % 50);
+    pt.g = static_cast<Uint8>(175 + std::rand() % 70);
+    pt.b = 255;
+  } else {
+    pt.r = static_cast<Uint8>(185 + std::rand() % 70);
+    pt.g = static_cast<Uint8>(75 + std::rand() % 70);
+    pt.b = 255;
+  }
+  m_particles.push_back(pt);
 }
 
 void Game::UpdateParticles(float dt) {
@@ -316,12 +744,21 @@ void Game::UpdateParticles(float dt) {
     pt.life   -= dt;
     pt.pos.x  += pt.vel.x * dt;
     pt.pos.y  += pt.vel.y * dt;
+    if (pt.drag > 0.0f) {
+      const float damp = std::max(0.0f, 1.0f - pt.drag * dt);
+      pt.vel.x *= damp;
+      pt.vel.y *= damp;
+    }
     pt.vel.y  += pt.gravity * dt;
   }
   m_particles.erase(
     std::remove_if(m_particles.begin(), m_particles.end(),
                    [](const Particle& p) { return p.life <= 0.0f; }),
     m_particles.end());
+  if (static_cast<int>(m_particles.size()) > kMaxParticles) {
+    m_particles.erase(m_particles.begin(),
+                      m_particles.begin() + (m_particles.size() - static_cast<std::size_t>(kMaxParticles)));
+  }
 }
 
 void Game::AddPopup(const std::string& text, float x, float y, Uint8 r, Uint8 g, Uint8 b) {
@@ -581,7 +1018,7 @@ void Game::CheckCollision() {
       m_blinkTimer     = kHitInvincibleTime;
       m_hitEffectTimer = 0.4f;
       SpawnParticles(p.pos, 8, 255, 80, 80);
-      if (m_hp <= 0.0f) m_gameOver = true;
+      if (m_hp <= 0.0f) TriggerGameOver();
       return;
     }
   }
@@ -597,7 +1034,7 @@ void Game::CheckCollision() {
       m_blinkTimer     = kHitInvincibleTime;
       m_hitEffectTimer = 0.4f;
       SpawnParticles(p.pos, 8, 255, 80, 80);
-      if (m_hp <= 0.0f) m_gameOver = true;
+      if (m_hp <= 0.0f) TriggerGameOver();
       return;
     }
   }
@@ -605,7 +1042,14 @@ void Game::CheckCollision() {
 
 void Game::CheckGameOver() {
   const auto& p = m_world.Get(m_playerId);
-  if (p.pos.y > static_cast<float>(m_h + 100)) m_gameOver = true;
+  if (p.pos.y > static_cast<float>(m_h + 100)) TriggerGameOver();
+}
+
+void Game::TriggerGameOver() {
+  if (m_gameOver) return;
+  m_gameOver = true;
+  m_fields.ClearAll();
+  m_blackHoleParticleAcc = 0.0f;
 }
 
 void Game::EnterClearState() {
@@ -615,6 +1059,8 @@ void Game::EnterClearState() {
   m_scrollSpeed = 0.0f;
   m_bombs.CancelCharge();
   m_rewindQueued = false;
+  m_fields.ClearAll();
+  m_blackHoleParticleAcc = 0.0f;
 
   auto& p = m_world.Get(m_playerId);
   p.vel.x = 0.0f;
@@ -652,6 +1098,8 @@ void Game::SpawnFireworkBurst(float screenX, float screenY) {
     pt.r       = palette[ci][0];
     pt.g       = palette[ci][1];
     pt.b       = palette[ci][2];
+    pt.glow    = true;
+    pt.size    = 3.0f + static_cast<float>(std::rand() % 5);
     if (std::rand() % 4 == 0) {
       const int cj = std::rand() % paletteN;
       pt.r = palette[cj][0];
@@ -741,6 +1189,8 @@ void Game::Restart() {
   m_rewindVortexAngle      = 0.0f;
   m_playerPosHistoryCount  = 0;
   m_rewindGhosts.clear();
+  m_fields.ClearAll();
+  m_blackHoleParticleAcc = 0.0f;
 
   auto& p = m_world.Get(m_playerId);
   p.pos = {140.0f, static_cast<float>(m_h - 80)};
@@ -867,16 +1317,17 @@ void Game::ResetPlayerPositionHistory(Vec2 pos) {
 
 void Game::SpawnRewindVfx(Vec2 playerCenter) {
   m_rewindFxTimer     = kRewindFxSeconds;
-  // Vortex should be screen-space centered.
   m_rewindVortexCenter = playerCenter;
   m_rewindVortexAngle  = 0.0f;
   m_rewindGhosts.clear();
   m_rewindGhosts.reserve(static_cast<std::size_t>(m_playerPosHistoryCount));
 
   for (int i = 0; i < m_playerPosHistoryCount; ++i) {
+    if (i == 0) continue;
     RewindGhost ghost;
     ghost.pos     = m_playerPosHistory[static_cast<std::size_t>(i)];
     const float age01 = static_cast<float>(i) / std::max(1, m_playerPosHistoryCount - 1);
+    ghost.age01   = age01;
     ghost.maxLife = kRewindFxSeconds * (0.55f + 0.35f * (1.0f - age01));
     ghost.life    = ghost.maxLife;
     m_rewindGhosts.push_back(ghost);
@@ -886,7 +1337,7 @@ void Game::SpawnRewindVfx(Vec2 playerCenter) {
   for (int i = 0; i < kRewindConvergeParticles; ++i) {
     Particle pt;
     const float angle = static_cast<float>(std::rand() % 360) * 3.14159f / 180.0f;
-    const float dist  = 70.0f + static_cast<float>(std::rand() % 110);
+    const float dist  = 80.0f + static_cast<float>(std::rand() % 220);
     pt.pos = {playerCenter.x + std::cos(angle) * dist,
               playerCenter.y + std::sin(angle) * dist};
 
@@ -895,21 +1346,90 @@ void Game::SpawnRewindVfx(Vec2 playerCenter) {
     if (len > 1e-4f) toCenter = toCenter / len;
     Vec2 tangent{-toCenter.y, toCenter.x};
     const float spinDir = (std::rand() % 2 == 0) ? 1.0f : -1.0f;
-    const float speed = 220.0f + static_cast<float>(std::rand() % 160);
-    pt.vel     = toCenter * speed + tangent * (spinDir * (80.0f + static_cast<float>(std::rand() % 90)));
+    const float speed = 280.0f + static_cast<float>(std::rand() % 260);
+    pt.vel     = toCenter * speed + tangent * (spinDir * (160.0f + static_cast<float>(std::rand() % 150)));
     pt.gravity = 0.0f;
-    pt.maxLife = 0.45f + static_cast<float>(std::rand() % 25) / 100.0f;
+    pt.drag    = 0.78f;
+    pt.maxLife = 0.62f + static_cast<float>(std::rand() % 35) / 100.0f;
     pt.life    = pt.maxLife;
-    pt.r       = static_cast<Uint8>(90 + std::rand() % 70);
-    pt.g       = static_cast<Uint8>(150 + std::rand() % 80);
-    pt.b       = 255;
+    pt.size    = 1.0f + static_cast<float>(std::rand() % 4);
+    pt.glow        = false;
+    pt.rewindSpark = true;
+    const int tone = std::rand() % 100;
+    if (tone < 40) {
+      pt.r = 255;
+      pt.g = static_cast<Uint8>(195 + std::rand() % 50);
+      pt.b = static_cast<Uint8>(60 + std::rand() % 80);
+    } else if (tone < 70) {
+      const Uint8 w = static_cast<Uint8>(210 + std::rand() % 45);
+      pt.r = pt.g = pt.b = w;
+    } else {
+      pt.r = static_cast<Uint8>(70 + std::rand() % 70);
+      pt.g = static_cast<Uint8>(165 + std::rand() % 80);
+      pt.b = 255;
+    }
     m_particles.push_back(pt);
   }
+
+  for (int i = 0; i < kRewindRingParticles; ++i) {
+    Particle pt;
+    const float angle = static_cast<float>(std::rand() % 360) * 3.14159f / 180.0f;
+    const float dist = 120.0f + static_cast<float>(std::rand() % 200);
+    pt.pos = {playerCenter.x + std::cos(angle) * dist, playerCenter.y + std::sin(angle) * dist};
+    Vec2 toCenter = playerCenter - pt.pos;
+    const float len = toCenter.Len();
+    if (len > 1e-4f) toCenter = toCenter / len;
+    pt.vel = toCenter * (320.0f + static_cast<float>(std::rand() % 220));
+    pt.gravity = 0.0f;
+    pt.drag = 0.42f;
+    pt.maxLife = 0.85f;
+    pt.life = pt.maxLife;
+    pt.size = 1.0f + static_cast<float>(std::rand() % 4);
+    pt.glow = false;
+    pt.rewindSpark = true;
+    pt.r = 255;
+    pt.g = static_cast<Uint8>(185 + std::rand() % 60);
+    pt.b = static_cast<Uint8>(70 + std::rand() % 80);
+    m_particles.push_back(pt);
+  }
+
+  for (int i = 0; i < kRewindSparkParticles; ++i) {
+    Particle pt;
+    const float angle = static_cast<float>(std::rand() % 360) * 3.14159f / 180.0f;
+    const float dist = 100.0f + static_cast<float>(std::rand() % 180);
+    pt.pos = {playerCenter.x + std::cos(angle) * dist, playerCenter.y + std::sin(angle) * dist};
+    Vec2 toCenter = playerCenter - pt.pos;
+    const float len = toCenter.Len();
+    if (len > 1e-4f) toCenter = toCenter / len;
+    Vec2 tangent{-toCenter.y, toCenter.x};
+    const float spinDir = (std::rand() % 2 == 0) ? 1.0f : -1.0f;
+    pt.vel = toCenter * (200.0f + static_cast<float>(std::rand() % 180)) +
+             tangent * (spinDir * (170.0f + static_cast<float>(std::rand() % 140)));
+    pt.gravity = 0.0f;
+    pt.drag = 0.50f;
+    pt.maxLife = 0.55f + static_cast<float>(std::rand() % 30) / 100.0f;
+    pt.life = pt.maxLife;
+    pt.size = 1.0f + static_cast<float>(std::rand() % 3);
+    pt.glow = false;
+    pt.rewindSpark = true;
+    if (std::rand() % 2 == 0) {
+      pt.r = static_cast<Uint8>(175 + std::rand() % 80);
+      pt.g = static_cast<Uint8>(90 + std::rand() % 90);
+      pt.b = 255;
+    } else {
+      pt.r = 255;
+      pt.g = static_cast<Uint8>(210 + std::rand() % 40);
+      pt.b = static_cast<Uint8>(90 + std::rand() % 70);
+    }
+    m_particles.push_back(pt);
+  }
+
+  m_rewindParticleAcc = 0.0f;
 }
 
 void Game::UpdateRewindVfx(float dt) {
   m_rewindFxTimer = std::max(0.0f, m_rewindFxTimer - dt);
-  if (m_rewindFxTimer > 0.0f) m_rewindVortexAngle += dt * 14.0f;
+
   for (auto& ghost : m_rewindGhosts) {
     if (ghost.life <= 0.0f) continue;
     ghost.life = std::max(0.0f, ghost.life - dt);
@@ -920,23 +1440,56 @@ void Game::UpdateRewindVfx(float dt) {
       m_rewindGhosts.end());
 }
 
+void Game::UpdateRewindVisuals(float dt) {
+  if (m_rewindFxTimer <= 0.0f) return;
+
+  m_rewindVortexAngle += dt * kRewindSpinRadPerSec;
+  m_rewindParticleAcc += dt;
+  constexpr float kSpawnInterval = 0.006f;
+  while (m_rewindParticleAcc >= kSpawnInterval) {
+    m_rewindParticleAcc -= kSpawnInterval;
+    SpawnRewindOrbitParticle(m_rewindVortexCenter);
+    if (std::rand() % 2 == 0) {
+      SpawnRewindOrbitParticle(m_rewindVortexCenter);
+    }
+  }
+}
+
+void Game::UpdateVisualEffects(float dt) {
+  if (!m_started || m_paused || m_gameOver) return;
+
+  m_fields.AdvanceSpin(dt);
+  UpdateRewindVisuals(dt);
+  UpdateBlackHoleParticles(dt);
+}
+
 void Game::DrawRewindGhosts(SDL_Renderer* r, float camX) const {
   if (m_rewindGhosts.empty()) return;
 
   const auto& player = m_world.Get(m_playerId);
   const float radius = player.circle.radius * 0.92f;
+  auto& vfx = VfxLibrary::Instance();
 
+  m_playerSprite.EnsureUploaded(r);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  for (const RewindGhost& ghost : m_rewindGhosts) {
+  for (auto it = m_rewindGhosts.rbegin(); it != m_rewindGhosts.rend(); ++it) {
+    const RewindGhost& ghost = *it;
     if (ghost.life <= 0.0f || ghost.maxLife <= 0.0f) continue;
     const float t = ghost.life / ghost.maxLife;
-    const Uint8 a = static_cast<Uint8>(std::clamp(t, 0.0f, 1.0f) * 150.0f);
-    SDL_SetRenderDrawColor(r, 120, 210, 255, a);
     const float sx = ghost.pos.x - camX;
-    SDL_Rect rc = RectFromCircle({sx, ghost.pos.y}, radius);
-    SDL_RenderFillRect(r, &rc);
-    SDL_SetRenderDrawColor(r, 180, 120, 255, static_cast<Uint8>(a * 0.7f));
-    SDL_RenderDrawRect(r, &rc);
+    const float footY = ghost.pos.y + radius;
+    const float baseAlpha = 1.0f - ghost.age01 * 0.68f;
+    const Uint8 a = static_cast<Uint8>(std::clamp(t, 0.0f, 1.0f) * 200.0f * baseAlpha);
+    if (a == 0) continue;
+
+    if (m_playerSprite.IsReady()) {
+      m_playerSprite.DrawGhost(r, sx, footY, a);
+    }
+
+    if (vfx.IsReady() && ghost.age01 > 0.15f) {
+      vfx.DrawRewindGhostAura(r, sx, ghost.pos.y, radius * 0.55f, static_cast<Uint8>(a * 0.35f),
+                              ghost.age01 * 120.0f);
+    }
   }
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
@@ -945,60 +1498,35 @@ void Game::DrawRewindVortex(SDL_Renderer* r, float camX) const {
   (void)camX;
   if (m_rewindFxTimer <= 0.0f) return;
 
-  const float t = std::clamp(m_rewindFxTimer / kRewindFxSeconds, 0.0f, 1.0f);
+  const float lifeT = std::clamp(m_rewindFxTimer / kRewindFxSeconds, 0.0f, 1.0f);
+  const float fade = VfxLibrary::Envelope(lifeT, 0.20f, 0.28f);
   const float cx = static_cast<float>(m_w) * 0.5f;
   const float cy = static_cast<float>(m_h) * 0.5f;
-  constexpr float kPi = 3.14159265f;
-  const float maxR = std::sqrt(static_cast<float>(m_w * m_w + m_h * m_h)) * 2.4f;
-
-  // 0.5s fade-in, 0.5s fade-out.
-  float fade = 0.0f;
-  if (t < 0.5f) fade = t / 0.5f;
-  else fade = (1.0f - t) / 0.5f;
-  fade = std::clamp(fade, 0.0f, 1.0f);
+  const float radius = std::sqrt(static_cast<float>(m_w * m_w + m_h * m_h)) * 0.54f;
+  auto& vfx = VfxLibrary::Instance();
 
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-
-  // Darken the screen slightly to boost contrast.
-  const Uint8 dimA = static_cast<Uint8>(fade * 120.0f);
-  SDL_SetRenderDrawColor(r, 0, 0, 0, dimA);
+  SDL_SetRenderDrawColor(r, 6, 10, 26, static_cast<Uint8>(fade * 245.0f));
   SDL_Rect full{0, 0, m_w, m_h};
   SDL_RenderFillRect(r, &full);
 
-  constexpr int kArms = 6;
-  constexpr int kSegments = 80;
-  for (int arm = 0; arm < kArms; ++arm) {
-    const float armBase = static_cast<float>(arm) * (2.0f * kPi / static_cast<float>(kArms));
-    for (int s = 0; s < kSegments; ++s) {
-      const float u0 = static_cast<float>(s) / static_cast<float>(kSegments);
-      const float u1 = static_cast<float>(s + 1) / static_cast<float>(kSegments);
-      const float r0 = 8.0f + u0 * maxR;
-      const float r1 = 8.0f + u1 * maxR;
-      const float a0 = armBase + m_rewindVortexAngle + u0 * 8.0f * kPi;
-      const float a1 = armBase + m_rewindVortexAngle + u1 * 8.0f * kPi;
-      const Uint8 a = static_cast<Uint8>(fade * (1.0f - u0) * 255.0f);
-      // Thick line: draw 3 parallel lines.
-      for (int oy = -1; oy <= 1; ++oy) {
-        SDL_SetRenderDrawColor(r, 255, 255, 255, static_cast<Uint8>(a * 0.35f));
-        SDL_RenderDrawLine(r,
-                           static_cast<int>(cx + std::cos(a0) * r0),
-                           static_cast<int>(cy + std::sin(a0) * r0) + oy,
-                           static_cast<int>(cx + std::cos(a1) * r1),
-                           static_cast<int>(cy + std::sin(a1) * r1) + oy);
-        SDL_SetRenderDrawColor(r, 60, 190, 255, a);
-        SDL_RenderDrawLine(r,
-                           static_cast<int>(cx + std::cos(a0) * r0),
-                           static_cast<int>(cy + std::sin(a0) * r0) + oy,
-                           static_cast<int>(cx + std::cos(a1) * r1),
-                           static_cast<int>(cy + std::sin(a1) * r1) + oy);
-      }
-    }
+  vfx.DrawRewindStarfield(r, m_w, m_h, fade, m_rewindVortexAngle);
+  vfx.DrawRewindVortex(r, cx, cy, radius, lifeT, m_rewindVortexAngle);
+
+  static const char* kClockNums[] = {"XII", "XI", "X", "IX", "VIII", "VII",
+                                     "VI",  "V",  "IV", "III", "II", "I"};
+  constexpr float kPi = 3.14159265f;
+  for (int i = 0; i < 12; ++i) {
+    const float u = 0.10f + static_cast<float>(i) / 12.0f * 0.78f;
+    const float rr = radius * std::pow(0.06f, u * 0.92f);
+    const float ang = m_rewindVortexAngle * 0.55f + u * 9.5f * kPi;
+    const int nx = static_cast<int>(cx + std::cos(ang) * rr);
+    const int ny = static_cast<int>(cy + std::sin(ang) * rr);
+    const Uint8 numA = static_cast<Uint8>(fade * 230.0f);
+    m_ui.DrawCentered(r, nx, ny, kClockNums[i], SDL_Color{255, 215, 105, numA});
   }
 
-  const Uint8 coreA = static_cast<Uint8>(fade * 255.0f);
-  SDL_SetRenderDrawColor(r, 190, 120, 255, coreA);
-  SDL_Rect core = RectFromCircle({cx, cy}, 44.0f * fade + 14.0f);
-  SDL_RenderFillRect(r, &core);
+  vfx.DrawVignette(r, m_w, m_h, static_cast<Uint8>(fade * 75.0f), 0, 0, 0);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
@@ -1006,25 +1534,24 @@ void Game::DrawRewindScreenFx(SDL_Renderer* r) const {
   if (m_rewindFxTimer <= 0.0f) return;
 
   const float t = std::clamp(m_rewindFxTimer / kRewindFxSeconds, 0.0f, 1.0f);
-  const float ease = t * t;
+  const float fade = VfxLibrary::Envelope(t, 0.35f, 0.35f);
+  const float pulse = 0.85f + 0.15f * std::sin((1.0f - t) * 24.0f);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
 
-  const Uint8 tintA = static_cast<Uint8>(ease * 72.0f);
-  SDL_SetRenderDrawColor(r, 40, 120, 220, tintA);
+  const Uint8 tintA = static_cast<Uint8>(fade * pulse * 90.0f);
+  SDL_SetRenderDrawColor(r, 35, 110, 220, tintA);
   SDL_Rect full{0, 0, m_w, m_h};
   SDL_RenderFillRect(r, &full);
 
-  const Uint8 edgeA = static_cast<Uint8>(ease * 130.0f);
-  SDL_SetRenderDrawColor(r, 8, 10, 28, edgeA);
-  constexpr int band = 72;
-  SDL_Rect top{0, 0, m_w, band};
-  SDL_Rect bottom{0, m_h - band, m_w, band};
-  SDL_Rect left{0, 0, band, m_h};
-  SDL_Rect right{m_w - band, 0, band, m_h};
-  SDL_RenderFillRect(r, &top);
-  SDL_RenderFillRect(r, &bottom);
-  SDL_RenderFillRect(r, &left);
-  SDL_RenderFillRect(r, &right);
+  const Uint8 chromaA = static_cast<Uint8>(fade * 48.0f);
+  SDL_SetRenderDrawColor(r, 180, 80, 255, chromaA);
+  SDL_Rect leftHalf{0, 0, m_w / 2, m_h};
+  SDL_RenderFillRect(r, &leftHalf);
+  SDL_SetRenderDrawColor(r, 60, 200, 255, chromaA);
+  SDL_Rect rightHalf{m_w / 2, 0, m_w - m_w / 2, m_h};
+  SDL_RenderFillRect(r, &rightHalf);
+
+  VfxLibrary::Instance().DrawVignette(r, m_w, m_h, static_cast<Uint8>(fade * 110.0f), 6, 10, 30);
 
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
@@ -1085,7 +1612,7 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   if (!m_started || m_paused) return;
 
   if (m_gameOver) {
-    if (inputDevice.ConsumeJumpPressForFixedStep() || input.jumpPressed || input.jumpHeld) Restart();
+    if (input.resumePressed) Restart();
     return;
   }
 
@@ -1223,7 +1750,7 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   }
 
   m_hp = std::max(0.0f, m_hp - dt * 0.02f);
-  if (m_hp <= 0.0f) m_gameOver = true;
+  if (m_hp <= 0.0f) TriggerGameOver();
 
   m_stamina = std::min(3.0f, m_stamina + dt * 0.15f);
 
@@ -1246,6 +1773,60 @@ void Game::FixedUpdate(float dt, const InputState& input, Input& inputDevice) {
   CheckCollision();
   CheckGameOver();
   RecordPlayerPositionHistory(p.pos);
+}
+
+void Game::DrawGameplayHud(SDL_Renderer* r) const {
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+
+  const int leftX = kHudMargin;
+  const int topY = kHudMargin;
+  const int barW = kHudBarW;
+  const int badgeColW = (kHudHpBadgeR + 2) * 2 + 6;
+  const float badgeCx = static_cast<float>(leftX + badgeColW / 2);
+  const int hpBarX = leftX + badgeColW + 4;
+  const int hpBarY = topY + 2;
+  const int rowStride = (kHudHpBadgeR + 2) * 2 + 10;
+  const int staminaBarY = hpBarY + rowStride;
+  const int brandY = staminaBarY + rowStride + 2;
+  const int rightX = m_w - kHudMargin - 120;
+  const int line = m_ui.LineHeight();
+
+  m_itemSprites.EnsureUploaded(r);
+
+  DrawHpHeartBadge(r, badgeCx, static_cast<float>(hpBarY + kHudHpBarH / 2), &m_itemSprites);
+  const SDL_Rect hpBg{hpBarX, hpBarY, barW, kHudHpBarH};
+  DrawCookieRunHpBarShell(r, hpBg);
+  FillCookieStripedCapsule(r, hpBg, m_hp, 255, 130, 35, 255, 210, 55);
+  if (m_shieldTimer > 0.0f) {
+    DrawCapsuleOutline(r, hpBg, 255, 220, 60, 255);
+  }
+
+  DrawStaminaBadge(r, badgeCx, static_cast<float>(staminaBarY + kHudHpBarH / 2), &m_itemSprites);
+  const SDL_Rect staminaBg{hpBarX, staminaBarY, barW, kHudHpBarH};
+  DrawCookieRunBarShell(r, staminaBg, 18, 32, 22, 8, 14, 10, 36, 58, 34);
+  FillCookieStripedCapsule(r, staminaBg, m_stamina / 3.0f, 70, 190, 55, 145, 240, 95);
+
+  m_ui.Draw(r, leftX, brandY, "CHRONO RUSH", SDL_Color{120, 220, 255, 220});
+
+  char scoreBuf[32];
+  std::snprintf(scoreBuf, sizeof(scoreBuf), "%d", m_score);
+  m_ui.Draw(r, rightX, topY, scoreBuf, SDL_Color{255, 255, 255, 255});
+
+  const int totalSec = static_cast<int>(m_elapsed);
+  char timeBuf[16];
+  std::snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", totalSec / 60, totalSec % 60);
+  m_ui.Draw(r, rightX, topY + line + 2, timeBuf, SDL_Color{170, 210, 255, 230});
+
+  const SDL_Rect distBg{rightX, topY + line * 2 + 8, 120, kHudEnergyH};
+  DrawHudBarShell(r, distBg);
+  FillGradientBarH(r, distBg, std::clamp(m_distance / kTotalMapLengthM, 0.0f, 1.0f), 255, 170, 70, 255, 220,
+                   120);
+  char distBuf[24];
+  std::snprintf(distBuf, sizeof(distBuf), "%dm", static_cast<int>(m_distance));
+  m_ui.Draw(r, rightX, distBg.y + kHudEnergyH + 4, distBuf, SDL_Color{255, 190, 90, 230});
+
+  DrawStageNotify(r);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
 void Game::DrawTitleOverlay(SDL_Renderer* r) const {
@@ -1356,7 +1937,7 @@ void Game::DrawGameOverOverlay(SDL_Renderer* r) const {
       ("Score: " + std::to_string(m_score)).c_str(), gold); y += line + 4;
   m_ui.DrawCentered(r, m_w / 2, y,
       ("Bomb kills: " + std::to_string(m_bombKillCount)).c_str(), hint); y += line + 12;
-  m_ui.DrawCentered(r, m_w / 2, y, "C : 재시작", hint);
+  m_ui.DrawCentered(r, m_w / 2, y, "SPACE : 재시작", hint);
 
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
@@ -1368,6 +1949,7 @@ void Game::Render(SDL_Renderer* r) const {
 
   m_stage.EnsureUploaded(r);
   if (m_glacier.IsLoaded()) m_glacier.EnsureUploaded(r);
+  m_itemSprites.EnsureUploaded(r);
 
   bool useGlacier = false;
   if (m_stageTransitionPlaying && m_glacier.IsDrawReady())
@@ -1375,19 +1957,16 @@ void Game::Render(SDL_Renderer* r) const {
   else if (m_glacierTransitionDone && m_glacier.IsDrawReady() && m_distance >= kGlacierStageStartM)
     useGlacier = true;
 
-  DrawStageBackground(r, camX, groundY, useGlacier);
+  if (!useGlacier) m_obstacleSprites.EnsureUploaded(r);
 
-  auto drawKey = [&](int x, int y, bool held, bool pressed, SDL_Color base) {
-    SDL_Rect bg{x, y, 22, 22};
-    SDL_SetRenderDrawColor(r, 18, 18, 22, 255);
-    SDL_RenderFillRect(r, &bg);
-    SDL_Color c = base;
-    if (!held) { c.r /= 3; c.g /= 3; c.b /= 3; }
-    SDL_SetRenderDrawColor(r, c.r, c.g, c.b, 255);
-    SDL_Rect fg{x + 3, y + 3, 16, 16};
-    SDL_RenderFillRect(r, &fg);
-    if (pressed) { SDL_SetRenderDrawColor(r, 255, 255, 255, 255); SDL_RenderDrawRect(r, &bg); }
-  };
+  float blackHoleBackdrop = 1.0f;
+  if (useGlacier) {
+    blackHoleBackdrop = 0.0f;
+  } else if (m_stageTransitionPlaying) {
+    blackHoleBackdrop = 1.0f - std::clamp(m_stageTransitionT, 0.0f, 1.0f);
+  }
+
+  DrawStageBackground(r, camX, groundY, useGlacier);
 
   DrawRewindGhosts(r, camX);
   DrawRewindVortex(r, camX);
@@ -1418,6 +1997,7 @@ void Game::Render(SDL_Renderer* r) const {
   }
 
   // 장애물 렌더링
+  const bool marsObstacleArt = !useGlacier && m_obstacleSprites.IsReady();
   for (const auto& obs : m_obstacles) {
     const auto& body = m_world.Get(obs.bodyId);
     if (!body.active) continue;
@@ -1425,37 +2005,43 @@ void Game::Render(SDL_Renderer* r) const {
     const float sy = body.pos.y;
     const float rad = body.circle.radius;
 
+    if (marsObstacleArt) {
+      const ObstacleSpriteId spriteId = ObstacleSpriteFor(obs.type);
+      if (obs.type == ObstacleType::Ceiling) {
+        m_obstacleSprites.DrawFromTop(r, spriteId, sx, 0.0f, sy + rad);
+      } else {
+        m_obstacleSprites.DrawGrounded(r, spriteId, sx, sy + rad, ObstacleSpriteHeight(obs.type, rad));
+      }
+      continue;
+    }
+
     switch (obs.type) {
       case ObstacleType::Normal: {
         SDL_SetRenderDrawColor(r, 150, 110, 80, 255);
         SDL_Rect rc = RectFromCircle({sx, sy}, rad);
         SDL_RenderFillRect(r, &rc);
-        SDL_SetRenderDrawColor(r, 255, 255, 255, 60);
-        SDL_RenderDrawRect(r, &rc);
+        DrawWhiteRectOutline(r, rc);
         break;
       }
       case ObstacleType::Tall: {
         SDL_SetRenderDrawColor(r, 180, 60, 60, 255);
         SDL_Rect rc = RectFromCircle({sx, sy}, rad);
         SDL_RenderFillRect(r, &rc);
-        SDL_SetRenderDrawColor(r, 255, 255, 255, 60);
-        SDL_RenderDrawRect(r, &rc);
+        DrawWhiteRectOutline(r, rc);
         break;
       }
       case ObstacleType::Bounce: {
         SDL_SetRenderDrawColor(r, 255, 150, 30, 255);
         SDL_Rect rc = RectFromCircle({sx, sy}, rad);
         SDL_RenderFillRect(r, &rc);
-        SDL_SetRenderDrawColor(r, 255, 255, 255, 60);
-        SDL_RenderDrawRect(r, &rc);
+        DrawWhiteRectOutline(r, rc);
         break;
       }
       case ObstacleType::Spike: {
         SDL_SetRenderDrawColor(r, 80, 200, 255, 255);
         SDL_Rect rc = RectFromCircle({sx, sy}, rad);
         SDL_RenderFillRect(r, &rc);
-        SDL_SetRenderDrawColor(r, 255, 255, 255, 60);
-        SDL_RenderDrawRect(r, &rc);
+        DrawWhiteRectOutline(r, rc);
         break;
       }
       case ObstacleType::Triangle:
@@ -1469,30 +2055,35 @@ void Game::Render(SDL_Renderer* r) const {
           static_cast<int>(sy + rad)
         };
         SDL_RenderFillRect(r, &ceilRect);
-        SDL_SetRenderDrawColor(r, 255, 255, 255, 60);
-        SDL_RenderDrawRect(r, &ceilRect);
+        DrawWhiteRectOutline(r, ceilRect);
         break;
       }
       case ObstacleType::Moving: {
         SDL_SetRenderDrawColor(r, 60, 200, 100, 255);
         SDL_Rect rc = RectFromCircle({sx, sy}, rad);
         SDL_RenderFillRect(r, &rc);
-        SDL_SetRenderDrawColor(r, 255, 255, 255, 60);
-        SDL_RenderDrawRect(r, &rc);
+        DrawWhiteRectOutline(r, rc);
         break;
       }
     }
   }
 
-  // 떨어지는 장애물 (보라색)
+  // 떨어지는 장애물
   for (int id : m_fallingIds) {
     const auto& crate = m_world.Get(id);
     if (!crate.active) continue;
-    SDL_SetRenderDrawColor(r, 150, 80, 220, 255);
-    SDL_Rect rc = RectFromCircle({crate.pos.x - camX, crate.pos.y}, crate.circle.radius);
-    SDL_RenderFillRect(r, &rc);
-    SDL_SetRenderDrawColor(r, 255, 255, 255, 60);
-    SDL_RenderDrawRect(r, &rc);
+    const float sx = crate.pos.x - camX;
+    const float sy = crate.pos.y;
+    const float rad = crate.circle.radius;
+
+    if (marsObstacleArt) {
+      m_obstacleSprites.DrawCentered(r, ObstacleSpriteId::Falling, sx, sy, rad * 2.8f);
+    } else {
+      SDL_SetRenderDrawColor(r, 150, 80, 220, 255);
+      SDL_Rect rc = RectFromCircle({sx, sy}, rad);
+      SDL_RenderFillRect(r, &rc);
+      DrawWhiteRectOutline(r, rc);
+    }
   }
 
 // 아이템
@@ -1500,11 +2091,13 @@ void Game::Render(SDL_Renderer* r) const {
     if (item.collected) continue;
     const auto& body = m_world.Get(item.bodyId);
     if (!body.active) continue;
-    const float sx  = body.pos.x - camX;
-    const float sy  = body.pos.y;
+    const float sx = body.pos.x - camX;
+    const float sy = body.pos.y;
     const float rad = body.circle.radius;
 
-    if (item.type == ItemType::Health) {
+    if (m_itemSprites.IsReady()) {
+      m_itemSprites.Draw(r, ItemSpriteFor(item.type), sx, sy, kItemDisplaySize);
+    } else if (item.type == ItemType::Health) {
       DrawHeart(r, sx, sy, rad, 80, 220, 80);
     } else if (item.type == ItemType::Stamina) {
       DrawLightning(r, sx, sy, rad, 80, 160, 255);
@@ -1522,19 +2115,43 @@ void Game::Render(SDL_Renderer* r) const {
   }
 
   // 파티클
+  auto& vfx = VfxLibrary::Instance();
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
   for (const auto& pt : m_particles) {
-    if (pt.life <= 0.0f) continue;
-    const Uint8 a = static_cast<Uint8>((pt.life / pt.maxLife) * 220.0f);
-    SDL_SetRenderDrawColor(r, pt.r, pt.g, pt.b, a);
+    if (pt.life <= 0.0f || pt.maxLife <= 0.0f) continue;
+    const float lifeT = pt.life / pt.maxLife;
+    const Uint8 a = static_cast<Uint8>(lifeT * 240.0f);
+    const float drawSize = pt.size * (0.45f + 0.55f * lifeT);
     const int px = static_cast<int>(pt.pos.x - camX);
     const int py = static_cast<int>(pt.pos.y);
-    SDL_Rect rc{px - 3, py - 3, 6, 6};
-    SDL_RenderFillRect(r, &rc);
+
+    if (vfx.IsReady()) {
+      if (pt.rewindSpark) {
+        vfx.DrawRewindPixelSpark(r, static_cast<float>(px), static_cast<float>(py), drawSize, pt.r, pt.g, pt.b, a);
+      } else if (pt.glow) {
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_ADD);
+        vfx.DrawSpark(r, static_cast<float>(px), static_cast<float>(py), drawSize * 1.4f, pt.r, pt.g, pt.b, a);
+        vfx.DrawSoftGlow(r, static_cast<float>(px), static_cast<float>(py), drawSize * 2.6f, pt.r, pt.g, pt.b,
+                         static_cast<Uint8>(a * 0.65f));
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+      } else {
+        SDL_SetRenderDrawColor(r, pt.r, pt.g, pt.b, a);
+        const int half = static_cast<int>(drawSize);
+        SDL_Rect rc{px - half, py - half, half * 2, half * 2};
+        SDL_RenderFillRect(r, &rc);
+      }
+    } else {
+      SDL_SetRenderDrawColor(r, pt.r, pt.g, pt.b, a);
+      const int half = static_cast<int>(drawSize);
+      SDL_Rect rc{px - half, py - half, half * 2, half * 2};
+      SDL_RenderFillRect(r, &rc);
+    }
   }
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
-  m_fields.Render(r, camX);
+  if (!m_cleared && !m_gameOver) {
+    m_fields.Render(r, camX, blackHoleBackdrop);
+  }
   const bool showAimGuide = m_started && m_rewindPoseLeft <= 0.0f && !m_lastInput.rewindHeld;
   m_bombs.Render(r, camX, groundY, m_world, m_world.Get(m_playerId),
                  MouseWorldPos(m_lastInput), showAimGuide);
@@ -1554,58 +2171,7 @@ void Game::Render(SDL_Renderer* r) const {
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
   if (gameplayHud && !m_cleared) {
-    const int leftX  = kHudMargin;
-    const int topY   = kHudMargin;
-    const int hpY    = topY + kHudBarH + kHudBarGap;
-    const int keysY  = hpY + kHudBarH + kHudBarGap + 6;
-    const int distX  = m_w - kHudMargin - kHudDistBarW;
-
-    // 좌상: 스태미나 → 체력 (세로 스택)
-    SDL_Rect stamBg{leftX, topY, kHudBarW, kHudBarH};
-    SDL_SetRenderDrawColor(r, 40, 40, 48, 255);
-    SDL_RenderFillRect(r, &stamBg);
-    SDL_Rect stamFg{leftX, topY, static_cast<int>((m_stamina / 3.0f) * kHudBarW), kHudBarH};
-    SDL_SetRenderDrawColor(r, 110, 255, 140, 255);
-    SDL_RenderFillRect(r, &stamFg);
-
-    SDL_Rect hpBg{leftX, hpY, kHudBarW, kHudBarH};
-    SDL_SetRenderDrawColor(r, 40, 40, 48, 255);
-    SDL_RenderFillRect(r, &hpBg);
-    SDL_Rect hpFg{leftX, hpY, static_cast<int>(m_hp * kHudBarW), kHudBarH};
-    SDL_SetRenderDrawColor(r,
-      static_cast<Uint8>(255 * (1.0f - m_hp)),
-      static_cast<Uint8>(255 * m_hp), 60, 255);
-    SDL_RenderFillRect(r, &hpFg);
-    if (m_shieldTimer > 0.0f) {
-      SDL_SetRenderDrawColor(r, 255, 220, 60, 255);
-      SDL_RenderDrawRect(r, &hpBg);
-    }
-
-    // 좌하(바 아래): C / X / Z 키 힌트
-    drawKey(leftX, keysY, m_lastInput.jumpHeld, m_lastInput.jumpPressed, {90, 220, 255, 255});
-    drawKey(leftX + kHudKeyStep, keysY, m_lastInput.throwHeld, m_lastInput.throwPressed, {255, 220, 80, 255});
-    drawKey(leftX + kHudKeyStep * 2, keysY, m_lastInput.rewindHeld, m_lastInput.rewindPressed,
-            {180, 80, 255, 255});
-
-    // 상단 중앙: 점수 (좌·우 컬럼과 분리)
-    m_ui.DrawCentered(r, m_w / 2, topY,
-                      ("Score: " + std::to_string(m_score)).c_str(),
-                      SDL_Color{255, 220, 60, 255});
-
-    // 우상: 진행 거리 바 + 숫자 (체력 바와 같은 두 번째 줄)
-    SDL_Rect distBg{distX, topY, kHudDistBarW, kHudBarH};
-    SDL_SetRenderDrawColor(r, 40, 40, 48, 255);
-    SDL_RenderFillRect(r, &distBg);
-    const int distFillW = static_cast<int>(
-        std::clamp(m_distance / kTotalMapLengthM, 0.0f, 1.0f) * kHudDistBarW);
-    SDL_Rect distFg{distX, topY, distFillW, kHudBarH};
-    SDL_SetRenderDrawColor(r, 255, 180, 60, 255);
-    SDL_RenderFillRect(r, &distFg);
-    m_ui.DrawCentered(r, distX + kHudDistBarW / 2, hpY,
-                      (std::to_string(static_cast<int>(m_distance)) + "m").c_str(),
-                      SDL_Color{255, 180, 60, 255});
-
-    DrawStageNotify(r);
+    DrawGameplayHud(r);
   }
 
   if (!m_started)       DrawTitleOverlay(r);
