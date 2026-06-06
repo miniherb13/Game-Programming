@@ -219,6 +219,11 @@ private:
   float m_hitCooldown = 0.0f;
   float m_shieldTimer = 0.0f;
   float m_blinkTimer  = 0.0f;
+ // 슬로우모션
+  bool  m_slowActive    = false;
+  float m_slowTimer     = 0.0f;
+  float m_staminaSlow   = 1.5f;   // 슬로우모션용 스태미나 (0~1.5)
+  float m_staminaRewind = 1.5f;   // 역행용 스태미나 (0~1.5)
 
   // 점수
   int   m_score         = 0;

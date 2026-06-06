@@ -13,11 +13,13 @@ struct InputState {
   bool throwPressed = false;
   bool rewindPressed = false;
   bool debugPressed = false;
+  bool slowPressed  = false;  // F키 슬로우모션
 
-  bool jumpHeld = false;
-  bool throwHeld = false;
+  bool jumpHeld    = false;
+  bool throwHeld   = false;
   bool throwReleased = false;
-  bool rewindHeld = false;
+  bool rewindHeld  = false;
+  bool slowHeld    = false;  // F키 홀드
 
   bool mouseDown = false;
   bool mouseReleased = false;
@@ -29,24 +31,22 @@ class Input {
 public:
   void BeginFrame();
   void Pump();
-  // Merge latched key-down events into State (survives 0 fixed-timestep ticks this frame).
   void ApplyPending();
-  // After gameplay fixed updates: drop jump/debug latch if physics ran.
   void FinishGameplayFrame(bool hadFixedStep);
   void ClearGameplayPending();
   void ConsumeRewindPending();
   void ConsumeThrowReleasedPending();
-  // One C press → true on the first fixed step only (avoids multi-substep buffer refresh).
   bool ConsumeJumpPressForFixedStep();
 
   const InputState& State() const { return m_state; }
 
 private:
   InputState m_state{};
-  bool m_jumpPending = false;
-  bool m_rewindPending = false;
-  bool m_debugPending = false;
+  bool m_jumpPending          = false;
+  bool m_rewindPending        = false;
+  bool m_debugPending         = false;
   bool m_throwReleasedPending = false;
+  bool m_slowPending          = false;  // F키
 };
 
 } // namespace cr

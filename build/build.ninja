@@ -148,6 +148,22 @@ build CMakeFiles/chrono_rush_demo.dir/src/game/PlayerSprite.cpp.obj: CXX_COMPILE
   OBJECT_FILE_DIR = CMakeFiles\chrono_rush_demo.dir\src\game
   TARGET_SUPPORT_DIR = CMakeFiles\chrono_rush_demo.dir
 
+build CMakeFiles/chrono_rush_demo.dir/src/game/ItemSprites.cpp.obj: CXX_COMPILER__chrono_rush_demo_unscanned_ D$:/게임프로젝트/Game-Programming/src/game/ItemSprites.cpp || cmake_object_order_depends_target_chrono_rush_demo
+  DEP_FILE = CMakeFiles\chrono_rush_demo.dir\src\game\ItemSprites.cpp.obj.d
+  FLAGS = -std=gnu++20 -Wall -Wextra -Wpedantic
+  INCLUDES = -ID:/게임프로젝트/Game-Programming/include -ID:/게임프로젝트/Game-Programming/third_party -ID:/게임프로젝트/Game-Programming/build/_deps/sdl2-build/include -ID:/게임프로젝트/Game-Programming/build/_deps/sdl2-build/include/SDL2 -ID:/게임프로젝트/Game-Programming/build/_deps/sdl2-build/include-config-/SDL2
+  OBJECT_DIR = CMakeFiles\chrono_rush_demo.dir
+  OBJECT_FILE_DIR = CMakeFiles\chrono_rush_demo.dir\src\game
+  TARGET_SUPPORT_DIR = CMakeFiles\chrono_rush_demo.dir
+
+build CMakeFiles/chrono_rush_demo.dir/src/game/ObstacleSprites.cpp.obj: CXX_COMPILER__chrono_rush_demo_unscanned_ D$:/게임프로젝트/Game-Programming/src/game/ObstacleSprites.cpp || cmake_object_order_depends_target_chrono_rush_demo
+  DEP_FILE = CMakeFiles\chrono_rush_demo.dir\src\game\ObstacleSprites.cpp.obj.d
+  FLAGS = -std=gnu++20 -Wall -Wextra -Wpedantic
+  INCLUDES = -ID:/게임프로젝트/Game-Programming/include -ID:/게임프로젝트/Game-Programming/third_party -ID:/게임프로젝트/Game-Programming/build/_deps/sdl2-build/include -ID:/게임프로젝트/Game-Programming/build/_deps/sdl2-build/include/SDL2 -ID:/게임프로젝트/Game-Programming/build/_deps/sdl2-build/include-config-/SDL2
+  OBJECT_DIR = CMakeFiles\chrono_rush_demo.dir
+  OBJECT_FILE_DIR = CMakeFiles\chrono_rush_demo.dir\src\game
+  TARGET_SUPPORT_DIR = CMakeFiles\chrono_rush_demo.dir
+
 build CMakeFiles/chrono_rush_demo.dir/src/game/Game.cpp.obj: CXX_COMPILER__chrono_rush_demo_unscanned_ D$:/게임프로젝트/Game-Programming/src/game/Game.cpp || cmake_object_order_depends_target_chrono_rush_demo
   DEP_FILE = CMakeFiles\chrono_rush_demo.dir\src\game\Game.cpp.obj.d
   FLAGS = -std=gnu++20 -Wall -Wextra -Wpedantic
@@ -180,6 +196,14 @@ build CMakeFiles/chrono_rush_demo.dir/src/render/UiText.cpp.obj: CXX_COMPILER__c
   OBJECT_FILE_DIR = CMakeFiles\chrono_rush_demo.dir\src\render
   TARGET_SUPPORT_DIR = CMakeFiles\chrono_rush_demo.dir
 
+build CMakeFiles/chrono_rush_demo.dir/src/render/VfxLibrary.cpp.obj: CXX_COMPILER__chrono_rush_demo_unscanned_ D$:/게임프로젝트/Game-Programming/src/render/VfxLibrary.cpp || cmake_object_order_depends_target_chrono_rush_demo
+  DEP_FILE = CMakeFiles\chrono_rush_demo.dir\src\render\VfxLibrary.cpp.obj.d
+  FLAGS = -std=gnu++20 -Wall -Wextra -Wpedantic
+  INCLUDES = -ID:/게임프로젝트/Game-Programming/include -ID:/게임프로젝트/Game-Programming/third_party -ID:/게임프로젝트/Game-Programming/build/_deps/sdl2-build/include -ID:/게임프로젝트/Game-Programming/build/_deps/sdl2-build/include/SDL2 -ID:/게임프로젝트/Game-Programming/build/_deps/sdl2-build/include-config-/SDL2
+  OBJECT_DIR = CMakeFiles\chrono_rush_demo.dir
+  OBJECT_FILE_DIR = CMakeFiles\chrono_rush_demo.dir\src\render
+  TARGET_SUPPORT_DIR = CMakeFiles\chrono_rush_demo.dir
+
 
 # =============================================================================
 # Link build statements for EXECUTABLE target chrono_rush_demo
@@ -188,7 +212,7 @@ build CMakeFiles/chrono_rush_demo.dir/src/render/UiText.cpp.obj: CXX_COMPILER__c
 #############################################
 # Link the executable chrono_rush_demo.exe
 
-build chrono_rush_demo.exe: CXX_EXECUTABLE_LINKER__chrono_rush_demo_ CMakeFiles/chrono_rush_demo.dir/src/main.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/app/App.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/core/Clock.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/core/Input.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/core/Log.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/math/Vec2.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/physics/PhysicsWorld.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/rewind/BodySnapshot.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/rewind/RewindBuffer.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/rewind/Snapshot.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/Bomb.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/GravityField.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/PlayerSprite.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/Game.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/StageMap.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/StageGlacier.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/render/UiText.cpp.obj | _deps/sdl2-build/libSDL2.a || _deps/sdl2-build/libSDL2.a
+build chrono_rush_demo.exe: CXX_EXECUTABLE_LINKER__chrono_rush_demo_ CMakeFiles/chrono_rush_demo.dir/src/main.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/app/App.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/core/Clock.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/core/Input.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/core/Log.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/math/Vec2.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/physics/PhysicsWorld.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/rewind/BodySnapshot.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/rewind/RewindBuffer.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/rewind/Snapshot.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/Bomb.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/GravityField.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/PlayerSprite.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/ItemSprites.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/ObstacleSprites.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/Game.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/StageMap.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/game/StageGlacier.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/render/UiText.cpp.obj CMakeFiles/chrono_rush_demo.dir/src/render/VfxLibrary.cpp.obj | _deps/sdl2-build/libSDL2.a || _deps/sdl2-build/libSDL2.a
   LINK_LIBRARIES = _deps/sdl2-build/libSDL2.a  -lgdi32  -lm  -lkernel32  -luser32  -lgdi32  -lwinmm  -limm32  -lole32  -loleaut32  -lversion  -luuid  -ladvapi32  -lsetupapi  -lshell32  -ldinput8  -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
   OBJECT_DIR = CMakeFiles\chrono_rush_demo.dir
   POST_BUILD = C:\Windows\System32\cmd.exe /C "cd /D D:\게임프로젝트\Game-Programming\build && D:\msys64\mingw64\bin\cmake.exe -E copy_directory D:/게임프로젝트/Game-Programming/assets D:/게임프로젝트/Game-Programming/build/assets"
