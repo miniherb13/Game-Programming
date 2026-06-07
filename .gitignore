@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 *.pyo
+scripts/__pycache__/
 
 # Pi 촬영 임시 파일
 detect.jpg
