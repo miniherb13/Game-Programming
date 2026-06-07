@@ -1,0 +1,89 @@
+"""LCD / LED 출력"""
+
+from gpiozero import LED
+from config import LCD_ADDR, LCD_ENABLED, LED_PIN
+
+if LCD_ENABLED:
+    from RPLCD.i2c import CharLCD
+
+
+class LCD:
+    def __init__(self, addr=0x27):
+        self.lcd = CharLCD(
+            i2c_expander="PCF8574",
+            address=addr,
+            port=1,
+            cols=16,
+            rows=2
+        )
+        self.lcd.clear()
+
+    def show(self, line1="", line2=""):
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.write_string(line1[:16].ljust(16))
+
+        self.lcd.cursor_pos = (1, 0)
+        self.lcd.write_string(line2[:16].ljust(16))
+
+    def close(self):
+        self.lcd.clear()
+        self.lcd.close()
+
+
+class Actuator:
+    def __init__(self):
+        self.led = LED(LED_PIN) if LED_PIN else None
+        self.lcd = LCD(LCD_ADDR) if LCD_ENABLED else None
+
+    def _lcd(self, line1, line2=""):
+        print(f"[LCD] {line1} | {line2}")
+
+        if self.lcd:
+            self.lcd.show(line1, line2)
+
+    def show_idle(self):
+        if self.led:
+            self.led.off()
+
+        self._lcd("Companion Bot", "Zzz...")
+
+    def show_motion(self):
+        if self.led:
+            self.led.on()
+
+        self._lcd("Hi there!", "I see you!")
+
+    def show_reply(self, line1, line2=""):
+        if self.led:
+            self.led.on()
+
+        self._lcd(line1, line2)
+
+    def close(self):
+        if self.led:
+            self.led.off()
+
+        if self.lcd:
+            self.lcd.close()
+
+        if self.led:
+            self.led.close()
+
+
+if __name__ == "__main__":
+    import time
+
+    act = Actuator()
+
+    try:
+        act.show_idle()
+        time.sleep(2)
+
+        act.show_motion()
+        time.sleep(2)
+
+        act.show_reply("Hello!", "How are you?")
+        time.sleep(2)
+
+    finally:
+        act.close()
